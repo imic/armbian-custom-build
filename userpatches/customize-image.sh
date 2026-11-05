@@ -7,6 +7,15 @@
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
+# The framework bind-mounts userpatches/overlay read-only at
+# /tmp/overlay for this script; it does NOT copy it into the image
+# itself (lib/functions/rootfs/customize.sh). Apply it now, so the
+# units and scripts below exist when they are enabled/chmod'ed.
+# (The desktop-variant marker, when present, arrives this way too.)
+if [ -d /tmp/overlay ]; then
+	cp -a /tmp/overlay/. /
+fi
+
 apt-get update
 if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
 	# "desktop: no" was selected when dispatching the workflow: the
