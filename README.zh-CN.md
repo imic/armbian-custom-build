@@ -28,7 +28,54 @@
   （桌面由 customize-image.sh 安装，不要加 BUILD_DESKTOP)。
 
 首次构建出的镜像先不要急着刷：把产物 DTB 与内嵌 config 和参考机逐项对一遍
-再决定刷机。
+再决定刷机。刷机方法见下节。
+
+
+## 刷机说明
+
+前提：bootloader 已解锁，电脑装有 fastboot。产物为两个文件：
+boot 镜像（`*.boot_sm8250-oneplus-kebab.img`）和 rootfs 镜像（`*.rootfs.img`，
+.xz 的先解压）。
+
+> ⚠️ **只准用 A 槽位，B 槽位会死机。**
+> 刷机前先确认当前活动槽位是 a；是 b 的先切回 a。不要把本镜像刷到 B 槽。
+
+```bash
+fastboot getvar current-slot        # 必须是 a
+fastboot --set-active=a             # 不是 a 时执行，然后重启回 bootloader
+fastboot flash boot_a <boot 镜像>
+fastboot flash userdata <rootfs 镜像>
+fastboot reboot
+```
+
+首次启动会进入 Armbian 首启向导（建用户、改密码）。刷完 rootfs 后，
+每台设备自己的数据要本地恢复，见下一节。
+
+只更新内核/boot 时（rootfs 不动）：只刷 `boot_a` 一步即可，
+回滚就是把旧 boot 镜像刷回 `boot_a`。
+
+## MSM 工具（EDL 救砖 / 回官方系统）
+
+连 fastboot 都进不去时，用高通 EDL（9008）模式整机救砖。工具是
+OnePlus 官方售后工具 **MsmDownloadTool V4.0**（仅 Windows），随各区域的
+EDL 包附带，没有独立通用版；OnePlus 8T 的包由 XDA 的
+Some_Random_Username 发布，按区域分（均为 Android 11 底包）：
+
+- 国际版 KB05AA、欧洲版 KB05BA、印度版 KB05DA、T-Mobile 版 KB09CB
+- XDA 原帖（T-Mobile 版）：https://forum.xda-developers.com/t/op8t-oos-tmo-kb09cb-unbrick-tool-to-restore-your-device-to-oxygenos.4180981/
+- 各区域下载汇总：https://droidwin.com/download-msm-download-tool-unbrick-any-oneplus-device/
+- 图文教程：https://www.thecustomdroid.com/oneplus-8t-unbrick-guide/
+
+用法要点：启动工具并选对应区域 → 手机关机，同时按住音量+和音量-
+不放、插上 USB（设备管理器应显示 Qualcomm HS-USB QDLoader 9008）→
+点 Start，约几分钟完成。
+
+注意：
+
+- MSM 会把整机刷回官方 OxygenOS 并**重新锁定 bootloader**，
+  之后要重新解锁才能再刷本镜像。
+- **不要碰 SMT Download 模式**，会抹掉 IMEI 和 Widevine 证书。
+- 选包必须对准机器的区域版本，选错会在校验环节被拒。
 
 ## 每台设备各自的数据（不在本仓库）
 
