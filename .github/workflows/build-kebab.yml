@@ -1,0 +1,49 @@
+name: Build kebab image
+
+# Manual builds only. Run from the Actions tab ("Run workflow").
+# NOTE: on a fork, GitHub Actions must be enabled once by the repo
+# owner in the Actions tab before this workflow can run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: Board
+        type: choice
+        options:
+          - oneplus-kebab
+        default: oneplus-kebab
+      release:
+        description: Userspace release
+        type: choice
+        options:
+          - resolute
+        default: resolute
+      target:
+        description: Build target
+        type: choice
+        options:
+          - build
+          - kernel
+        default: build
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build with the Armbian framework
+        uses: armbian/build@main
+        with:
+          armbian_token: ${{ secrets.GITHUB_TOKEN }}
+          armbian_board: ${{ inputs.board }}
+          armbian_release: ${{ inputs.release }}
+          armbian_target: ${{ inputs.target }}
+          # minimal image: the desktop stack is installed by
+          # userpatches/customize-image.sh (same set as the
+          # reference device), not by the framework desktop recipe.
+          armbian_ui: "minimal"
+          armbian_runner_clean: "yes"
