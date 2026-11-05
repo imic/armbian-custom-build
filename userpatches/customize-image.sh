@@ -51,9 +51,11 @@ FW=/lib/firmware
 	exit 1
 }
 echo "customize: firmware before pruning: $(du -sh $FW | cut -f1)"
-find $FW/qcom -mindepth 1 -maxdepth 1 ! -name sm8250 -exec rm -rf {} +
+# (only directories: the loose files directly under qcom/ include
+# this GPU's GMU firmware, qcom/a650_gmu.bin - keep those)
+find $FW/qcom -mindepth 1 -maxdepth 1 -type d ! -name sm8250 -exec rm -rf {} +
 find $FW/qcom/sm8250 -mindepth 1 -maxdepth 1 -type d ! -name OnePlus -exec rm -rf {} +
-find $FW/ath11k -mindepth 1 -maxdepth 1 ! -name QCA6390 -exec rm -rf {} +
+find $FW/ath11k -mindepth 1 -maxdepth 1 -type d ! -name QCA6390 -exec rm -rf {} +
 find $FW -mindepth 1 -maxdepth 1 -type d \
 	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos \
 	-exec rm -rf {} +
