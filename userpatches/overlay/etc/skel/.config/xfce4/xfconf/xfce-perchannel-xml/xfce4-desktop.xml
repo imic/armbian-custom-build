@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Seeded desktop defaults (user ruling 2026-11-06): do not litter
+     the desktop with an icon for every disk and partition on the
+     system (this device carries ~100 GPT partitions). Home, Trash
+     and regular files still show; filesystem and removable-volume
+     icons do not. -->
+<channel name="xfce4-desktop" version="1.0">
+  <property name="desktop-icons" type="empty">
+    <property name="file-icons" type="empty">
+      <property name="show-filesystem" type="bool" value="false"/>
+      <property name="show-removable" type="bool" value="false"/>
+    </property>
+  </property>
+</channel>

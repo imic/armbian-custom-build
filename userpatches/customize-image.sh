@@ -109,6 +109,13 @@ systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service
 
 systemctl set-default multi-user.target
+# The desktop is on-demand only (user ruling 2026-11-06): lightdm is
+# installed with the desktop variant but must not start at boot or
+# pull the graphical target in - a headless box has no use for an X
+# server sitting on a blank panel. Start it by hand when a local
+# desktop is wanted: systemctl start lightdm. xrdp is unaffected
+# (it spawns its own X per connection).
+systemctl disable lightdm.service 2>/dev/null || true
 
 # --- Firmware pruning ---------------------------------------------------
 # The board config installs the -full firmware tier (~2.3 GB covering
