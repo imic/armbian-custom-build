@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=亮屏
+Exec=/usr/local/bin/screen-on
+Icon=video-display
+Terminal=false

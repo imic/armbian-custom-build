@@ -1,0 +1,13 @@
+[Unit]
+Description=Join configured WiFi network (hardened)
+After=qca6390-wlan-enable.service
+Wants=qca6390-wlan-enable.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wifi-join.sh
+RemainAfterExit=yes
+TimeoutStartSec=120
+
+[Install]
+WantedBy=multi-user.target

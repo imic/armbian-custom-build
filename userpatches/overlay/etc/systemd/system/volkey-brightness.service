@@ -1,0 +1,10 @@
+[Unit]
+Description=Volume keys control panel brightness
+After=multi-user.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/volkey-brightness.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

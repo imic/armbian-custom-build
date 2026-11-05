@@ -1,0 +1,12 @@
+[Unit]
+Description=NFC watcher: keep neard adapter powered and polling, log tag events
+After=neard.service
+Wants=neard.service
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/nfc-watch.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

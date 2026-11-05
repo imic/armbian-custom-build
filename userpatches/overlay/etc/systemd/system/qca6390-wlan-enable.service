@@ -1,0 +1,14 @@
+[Unit]
+Description=QCA6390 WLAN enable (GPIO)
+After=local-fs.target
+# Run before network bring-up so WiFi interface exists when NetworkManager starts (critical when no USB RNDIS).
+Before=network-pre.target NetworkManager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/qca6390-wlan-enable.sh
+# Allow up to ~15s for GPIO + PCI rescan + driver probe (script waits for wlan* or 5s timeout).
+
+[Install]
+WantedBy=multi-user.target

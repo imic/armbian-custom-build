@@ -1,0 +1,2 @@
+#!/bin/sh
+echo 4 | sudo tee /sys/class/backlight/ae94000.dsi.0/bl_power >/dev/null

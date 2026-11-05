@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=NFC Card Tool
+Exec=/usr/local/bin/nfctool gui
+Terminal=false
+Categories=Utility;

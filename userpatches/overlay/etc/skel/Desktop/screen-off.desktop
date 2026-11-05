@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=熄屏
+Exec=/usr/local/bin/screen-off
+Icon=video-display
+Terminal=false

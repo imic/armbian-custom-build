@@ -1,0 +1,8 @@
+[Unit]
+Description=Blank panel 60s after boot (headless mode)
+After=multi-user.target
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c "sleep 60; echo 4 > /sys/class/backlight/ae94000.dsi.0/bl_power"
+[Install]
+WantedBy=multi-user.target
