@@ -31,6 +31,25 @@
 再决定刷机。刷机方法见下节。
 
 
+
+## 分区布局（必读）
+
+本机（256 GB 版）的分区表不是原厂布局。安装 Armbian 时重新分过区，
+现状（参考机实测）：
+
+- 固件类分区保持原厂 A/B 双份（xbl/abl/boot/dtbo/vbmeta 等），
+  `boot_a`、`boot_b` 各 96 MiB；`super` 7 GiB（安卓动态分区，未动）。
+- `userdata` 已从整机存储缩小到约 28 GiB，腾出的空间新建了两个分区：
+  `esp`（477 MiB，当前未用）和 **`linux`（约 196 GiB）**。
+- **Armbian 的 rootfs 实际装在 `linux` 分区**（启动后挂载为 /），
+  不是 userdata。刷 rootfs 时目标是 `linux`，刷错到 userdata 不会生效。
+- `persist`（32 MiB）存出厂校准数据（每台机器不同），fastboot 刷机
+  不碰它，也不要手动去动它。
+- 原厂状态的机器没有 `linux` 分区：要先按原安装流程重新分区
+  （缩小 userdata、新建 linux 分区），才能刷入本镜像；在原厂分区表上
+  执行 `fastboot flash linux` 只会报找不到分区。
+- Armbian 首启会把根文件系统扩展到分区大小（参考机 / 为 193 G）。
+
 ## 刷机说明
 
 前提：bootloader 已解锁，电脑装有 fastboot。产物为两个文件：
@@ -44,7 +63,7 @@ boot 镜像（`*.boot_sm8250-oneplus-kebab.img`）和 rootfs 镜像（`*.rootfs.
 fastboot getvar current-slot        # 必须是 a
 fastboot --set-active=a             # 不是 a 时执行，然后重启回 bootloader
 fastboot flash boot_a <boot 镜像>
-fastboot flash userdata <rootfs 镜像>
+fastboot flash linux <rootfs 镜像>
 fastboot reboot
 ```
 
@@ -74,6 +93,8 @@ Some_Random_Username 发布，按区域分（均为 Android 11 底包）：
 
 - MSM 会把整机刷回官方 OxygenOS 并**重新锁定 bootloader**，
   之后要重新解锁才能再刷本镜像。
+- MSM 按官方包重写分区表，上面的自定义分区布局（linux/esp 分区）
+  会一并消失；救砖后要从重新分区开始重装 Armbian。
 - **不要碰 SMT Download 模式**，会抹掉 IMEI 和 Widevine 证书。
 - 选包必须对准机器的区域版本，选错会在校验环节被拒。
 
