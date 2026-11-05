@@ -6,7 +6,7 @@
 上游更新时用 GitHub 的 **Sync fork** 同步即可。本仓库不向上游提交 PR。
 
 本系统的全部定制与构建（内核补丁、设备树、镜像定制、本文档）
-由 Muse（muse.ai）完成。
+由 Muse（muse.ai）构建完成，**请谨慎使用**。
 
 ## 我们改了什么（userpatches/）
 
