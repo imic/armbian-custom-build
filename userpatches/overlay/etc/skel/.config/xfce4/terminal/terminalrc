@@ -1,0 +1,21 @@
+[Configuration]
+; Seeded terminal defaults: the vanilla Ubuntu xfce4-terminal ships a
+; bare white default that looks nothing like a finished desktop.
+; Dark background, light text, a readable mono font - close to the
+; Armbian desktop images' terminal presentation (theirs ships via
+; their desktop metapackages, not a file that can be mirrored).
+FontName=Monospace 11
+ColorForeground=#d3d7cf
+ColorBackground=#20242e
+ColorCursor=#d3d7cf
+ColorPalette=#2e3436;#cc0000;#4e9a06;#c4a000;#3465a4;#75507b;#06989a;#d3d7cf;#555753;#ef2929;#8ae234;#fce94f;#729fcf;#ad7fa8;#34e2e2;#eeeeec
+MiscAlwaysShowTabs=FALSE
+MiscBell=FALSE
+MiscBordersDefault=TRUE
+MiscCursorBlinks=TRUE
+MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK
+MiscMenubarDefault=TRUE
+MiscToolbarDefault=FALSE
+MiscConfirmClose=TRUE
+MiscCopyOnSelect=FALSE
+ScrollingLines=10000

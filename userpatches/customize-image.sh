@@ -16,6 +16,18 @@ if [ -d /tmp/overlay ]; then
 	cp -a /tmp/overlay/. /
 fi
 
+# nfctool (the NFC card tool, source in tools/nfctool/) travels
+# base64-encoded as /usr/local/bin/nfctool.b64: the channel that
+# pushes this repo only carries UTF-8 text, so the musl-static
+# binary is stored encoded and materialized here. Hash-verified -
+# a mismatch fails the build rather than shipping a corrupt tool.
+if [ -f /usr/local/bin/nfctool.b64 ]; then
+	base64 -d /usr/local/bin/nfctool.b64 > /usr/local/bin/nfctool
+	rm -f /usr/local/bin/nfctool.b64
+	chmod +x /usr/local/bin/nfctool
+	echo "d11057aba8f89a06bf5dd7344e1c1507f3e0c0d027890af3051185b7eebdae33  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
+fi
+
 apt-get update
 if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
 	# "desktop: no" was selected when dispatching the workflow: the
