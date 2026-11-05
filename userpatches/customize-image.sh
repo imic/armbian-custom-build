@@ -25,7 +25,11 @@ if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
 	# polkitd even without a desktop: timedated & friends ask it for
 	# authorization, and with no daemon the firstrun timezone step is
 	# denied even for root.
-	apt-get install -y polkitd gpiod wpasupplicant dhcpcd-base
+	# bluez in both variants too: bt-fixed-mac.service (enabled for
+	# both) drives bluetoothctl, and without the bluez package there
+	# is no Bluetooth userspace at all - the kernel brings hci0 up
+	# (QCA6390 setup completes) but nothing can pair or connect.
+	apt-get install -y polkitd bluez gpiod wpasupplicant dhcpcd-base
 else
 	# --install-recommends: the build chroot's apt skips Recommends,
 	# which silently drops the xfce4 metapackage's whole second tier
@@ -35,8 +39,11 @@ else
 	# daemon the firstrun timezone step and every desktop privilege
 	# action are denied. The Chinese set (CJK fonts, zh-hans language
 	# pack, fcitx5 with the Pinyin engine) is named explicitly too;
-	# nothing Recommends it.
-	apt-get install -y --install-recommends xfce4 lightdm xrdp xorgxrdp polkitd gpiod wpasupplicant dhcpcd-base fonts-noto-cjk language-pack-zh-hans fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5
+	# nothing Recommends it. Same for bluez (the kernel brings hci0
+	# up on its own, but pairing needs the daemon and bluetoothctl -
+	# bt-fixed-mac.service calls it) and blueman, the desktop pairing
+	# applet; neither is in xfce4's Recommends chain.
+	apt-get install -y --install-recommends xfce4 lightdm xrdp xorgxrdp polkitd bluez blueman gpiod wpasupplicant dhcpcd-base fonts-noto-cjk language-pack-zh-hans fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5
 	# Make fcitx5 the system input method framework (per-user
 	# im-config state would not exist on a fresh image).
 	im-config -n fcitx5 || true
