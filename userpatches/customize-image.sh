@@ -117,6 +117,32 @@ systemctl set-default multi-user.target
 # (it spawns its own X per connection).
 systemctl disable lightdm.service 2>/dev/null || true
 
+# --- Slot packaging: this image is built for slot A ---------------------
+# The ABL packaging extension stamps the boot image's slot_suffix from
+# abl_boot_partition_label, which it sources from the rootfs's own
+# /boot/armbianEnv.txt (extensions/image-output-abl.sh). The framework
+# default is boot_b - its kebab image is a slot-B dual-boot product -
+# while this image is flashed to and run from slot A only. A _b stamp
+# on an A-slot system makes the on-device slot tooling (qbootctl)
+# keep its books on the wrong slot, the mechanism behind the
+# 2026-11-06 warm-reboot 900E drops.
+# There is NO userpatches override for the bootenv file itself: the
+# framework reads it straight from its own config/bootenv/ directory
+# (lib/functions/bsp/armbian-bsp-cli-deb.sh) with no userpatches
+# lookup, so the eed93414 userpatches/config/bootenv/ file never
+# took effect and run #7 still shipped stamped _b. The lever that
+# does work is rewriting the label in the image's own copies below -
+# /boot/armbianEnv.txt is also what the on-device kernel-update
+# repack (zz-update-abl-kernel) sources, so repacks stay _a too.
+# Fail the build if the label is not found: a silent _b stamp is
+# exactly the failure this block exists to prevent.
+for envf in /boot/armbianEnv.txt /usr/share/armbian/armbianEnv.txt; do
+	if [ -f "$envf" ]; then
+		sed -i 's/^abl_boot_partition_label=.*/abl_boot_partition_label=boot_a/' "$envf"
+	fi
+done
+grep -q '^abl_boot_partition_label=boot_a$' /boot/armbianEnv.txt || { echo "customize: abl_boot_partition_label is not boot_a in /boot/armbianEnv.txt - refusing to ship a _b-stamped image" >&2; exit 1; }
+
 # --- Firmware pruning ---------------------------------------------------
 # The board config installs the -full firmware tier (~2.3 GB covering
 # dozens of SoCs and WiFi chips). This hardware (SM8250 + QCA6390)

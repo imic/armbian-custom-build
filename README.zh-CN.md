@@ -17,9 +17,8 @@
 | `kernel/archive/sm8250-6.18/kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点与 WiFi/BT 使能 GPIO hog、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、充电器与 VBUS、马达；并删去框架基线给 pcie0_phy 挂的 `power-domains = <&qca639x>`——本构建里无人注册该电源域，PHY 探测会死等它、QCA6390 永不枚举（run #6 实测无 WiFi 的根因） |
 | `kernel/archive/sm8250-6.18/samsung-amb655x-panel.patch` | 面板驱动：主线与框架补丁集都没有 AMB655X（1080x2400 DSC）驱动，缺了它 MSM DRM 无法绑定、实体屏永不亮。此驱动为参考机 TEST 内核所带版本（sm8250-mainline 面板栈），已在本机面板实证；仅一处 API 适配（DSI 核心删掉的 write_long_multi 映射到 write_seq_multi，与现行主线三星 DSC 面板同法） |
 | `config/kernel/linux-sm8250-current.config` | 内核配置：以框架版为底，RFKILL、POWER_RESET_QCOM_PON 改 =y，并内置 NFC 全套 =y（功能随 boot 镜像走，不依赖 rootfs 模块）；另钉 CONFIG_DRM_PANEL_SAMSUNG_AMB655X=y 启用上面的面板驱动 |
-| `config/bootenv/qcom-abl.txt` | 槽位打包标签覆盖：框架默认 `abl_boot_partition_label=boot_b`（镜像按 B 槽打包、cmdline 钉 `slot_suffix=_b`、qbootctl 照此记账），与本仓库的 A 槽安装规矩冲突——改为 `boot_a`，使打包槽位与实际槽位一致（详见刷机说明的警告） |
 | `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、NFC 监控、自动熄屏、音量键调亮度、WiFi 加入、QCA6390 使能、蓝牙地址）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
-| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：安装桌面栈（xfce4/lightdm/xrdp，与参考机同款；带 --install-recommends，否则构建 chroot 的 apt 跳过 Recommends 会整批丢掉 polkit 代理/终端/通知等 xfce4 的第二层包）、polkitd（两个变体都装；无 polkit 守护时 firstrun 设时区与桌面提权全被拒）、中文集（fonts-noto-cjk 显示、language-pack-zh-hans、fcitx5 + 拼音，并 im-config 设为系统默认输入法）、gpiod 等包（neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 只装不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
+| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：安装桌面栈（xfce4/lightdm/xrdp，与参考机同款；带 --install-recommends，否则构建 chroot 的 apt 跳过 Recommends 会整批丢掉 polkit 代理/终端/通知等 xfce4 的第二层包）、polkitd（两个变体都装；无 polkit 守护时 firstrun 设时区与桌面提权全被拒）、中文集（fonts-noto-cjk 显示、language-pack-zh-hans、fcitx5 + 拼音，并 im-config 设为系统默认输入法）、gpiod 等包（neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 只装不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
 | `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡）；源码在此；二进制需在本机用 `cargo build --release --target aarch64-unknown-linux-musl` 构建后放进 `overlay/usr/local/bin/`（参考机现行二进制即如此构建） |
 
 ## 构建
@@ -106,9 +105,12 @@ boot 镜像（`*.boot_sm8250-oneplus-kebab.img`）和 rootfs 镜像（`*.rootfs.
 >
 > 本仓库的镜像是 **A 槽打包**的：框架默认的 ABL 模板把镜像按 B 槽打包
 > （`abl_boot_partition_label=boot_b`，cmdline 里会钉死 `slot_suffix=_b`，
-> 系统内的 qbootctl 等工具据此记账）；本仓库用
-> `userpatches/config/bootenv/qcom-abl.txt` 覆盖为 `boot_a`，使打包槽位
-> 与实际安装槽位一致。**不要拿上游默认模板构建的镜像照本节刷 A**——
+> 系统内的 qbootctl 等工具据此记账）；本仓库由 customize-image.sh 在
+> 构建时把镜像内 /boot/armbianEnv.txt 的该标签改写为 `boot_a`（校验
+> 不过即构建失败），使打包槽位与实际安装槽位一致。注意：run #7 的
+> 镜像仍是 _b 戳（当时的 userpatches bootenv 覆盖路线被证实无效，
+> 见文件清单），刷 #7 后须照刷机步骤先在 fastboot 里 set-active=a。
+> **不要拿上游默认模板构建的镜像照本节刷 A**——
 > 槽位记账错位正是 2026-11-06 两次热重启掉进 900E 的头号嫌疑。
 
 ```bash
