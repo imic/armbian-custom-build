@@ -38,6 +38,26 @@ echo "01b53d637ec554cc2af810d82dd77327785e06eae00c135e698299dc678788e3  /tmp/nea
 apt-get install -y /tmp/neard.deb
 rm -f /tmp/neard.deb
 
+# The board's own post_family_tweaks hook installs its userspace
+# package set only on releases its support check lists (jammy,
+# trixie, noble); resolute is not listed, so the whole set is
+# missing from this build - while the reference device carries
+# all of it. Install the same set here. unudhcpd is not in the
+# Ubuntu archive; the board hook takes it from the armbian repo,
+# temporarily enabled the same way. (At customize time the repo
+# file may be present under either name, depending on build
+# stage; handle both. A failed install aborts the build loudly.)
+apt-get install -y alsa-ucm-conf qbootctl qrtr-tools mkbootimg dropbear-bin
+if [ -f /etc/apt/sources.list.d/armbian.sources.disabled ]; then
+	mv /etc/apt/sources.list.d/armbian.sources.disabled /etc/apt/sources.list.d/armbian.sources
+	apt-get update
+	apt-get install -y unudhcpd
+	mv /etc/apt/sources.list.d/armbian.sources /etc/apt/sources.list.d/armbian.sources.disabled
+	apt-get update
+else
+	apt-get install -y unudhcpd
+fi
+
 # Files committed through the GitHub API lose their executable bit;
 # restore it for the programs the overlay ships.
 chmod +x /usr/local/bin/* 2>/dev/null || true
@@ -62,6 +82,9 @@ systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
 systemctl enable wifi-join.service
 systemctl enable bt-fixed-mac.service
+# Same two enables the board hook performs with its package set.
+systemctl enable qbootctl.service
+systemctl enable usbgadget-rndis.service
 
 systemctl set-default multi-user.target
 
