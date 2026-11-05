@@ -8,7 +8,15 @@ set -e
 export DEBIAN_FRONTEND=noninteractive
 
 apt-get update
-apt-get install -y xfce4 lightdm xrdp xorgxrdp neard gpiod wpasupplicant dhcpcd-base
+if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
+	# "desktop: no" was selected when dispatching the workflow: the
+	# marker file above was placed into the overlay by the workflow.
+	# Device-function packages still install; the desktop stack is
+	# skipped, leaving a pure minimal image.
+	apt-get install -y neard gpiod wpasupplicant dhcpcd-base
+else
+	apt-get install -y xfce4 lightdm xrdp xorgxrdp neard gpiod wpasupplicant dhcpcd-base
+fi
 
 # Files committed through the GitHub API lose their executable bit;
 # restore it for the programs the overlay ships.

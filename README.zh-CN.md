@@ -23,7 +23,7 @@
 ## 构建
 
 - **GitHub Actions**：先在仓库 Actions 页启用 Actions（fork 默认关闭，仓主点一次），
-  然后 Actions → “Build kebab image” → Run workflow，可选机型/发行版/整图或只编内核。
+  然后 Actions → “Build kebab image” → Run workflow，可选机型/发行版/整图或只编内核，以及 desktop（yes = 带 Xfce 桌面，默认；no = 纯 minimal，不装桌面栈）。
   产物由官方 armbian/build Action 生成并发布到 Releases。
   注意：workflow 文件 `.github/workflows/build-kebab.yml` 因 GitHub App 权限限制
   无法经 API 推送，需仓主在网页端手动新建一次（内容见仓库外随附说明），之后照常使用。
