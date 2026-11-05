@@ -47,6 +47,23 @@ jobs:
         run: |
           mkdir -p userpatches/overlay/etc
           echo minimal > userpatches/overlay/etc/armbian-variant
+      # Free disk space ourselves, with the composite's own pinned
+      # action, but WITHOUT its "large-packages" apt purge: that purge
+      # runs `apt-get remove -y ... powershell ...` with no tolerance,
+      # and current GitHub runner images no longer expose powershell
+      # to apt, so the remove aborts the whole job with exit 100
+      # before the build starts (run #7/#8, 2026-11-06; the identical
+      # workflow built fine on the previous runner image). The rm /
+      # docker based categories below free nearly as much space.
+      - name: Free runner disk space (no apt purge)
+        uses: descriptinc/free-disk-space@1b4b157593c6801212a2ed488c205e0a810b4592
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          docker-images: true
+          swap-storage: true
       - name: Build with the Armbian framework
         uses: armbian/build@main
         with:
@@ -58,4 +75,6 @@ jobs:
           # userpatches/customize-image.sh (same set as the
           # reference device), not by the framework desktop recipe.
           armbian_ui: "minimal"
-          armbian_runner_clean: "yes"
+          # The composite's own clean step is the fragile apt purge
+          # described above; ours already ran, so skip it.
+          armbian_runner_clean: ""
