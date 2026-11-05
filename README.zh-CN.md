@@ -45,10 +45,50 @@
   不是 userdata。刷 rootfs 时目标是 `linux`，刷错到 userdata 不会生效。
 - `persist`（32 MiB）存出厂校准数据（每台机器不同），fastboot 刷机
   不碰它，也不要手动去动它。
-- 原厂状态的机器没有 `linux` 分区：要先按原安装流程重新分区
-  （缩小 userdata、新建 linux 分区），才能刷入本镜像；在原厂分区表上
-  执行 `fastboot flash linux` 只会报找不到分区。
+- 原厂状态的机器没有 `linux` 分区：要先按下节步骤重新分区，
+  才能刷入本镜像；在原厂分区表上执行 `fastboot flash linux`
+  只会报找不到分区。
+- `dtbo_a` 是清空的（本镜像自带设备树，不用原厂 DTBO）；
+  `dtbo_b` 保留原厂内容未动。
 - Armbian 首启会把根文件系统扩展到分区大小（参考机 / 为 193 G）。
+
+
+### 分区操作（原厂机首次安装时执行一次）
+
+出处：amazingfate 的 Flashing Guide（同为 SM8250 平台的 elish 页，
+机制相同）：https://github.com/amazingfate/armbian-xiaomi-elish/wiki/Flashing-Guide
+以下坐标是参考机（256 GB）三次安装实测的定版数值；**分区号和起止点
+因机型/容量而异，动手前必须先 `print` 核对自己机器的实际分区表，
+不要照抄示例号码。**
+
+1. 解锁 bootloader，进 TWRP（`fastboot boot twrp.img` 临时启动即可，
+   不必刷入）。在 TWRP 的 Mount 页确认 Data 未挂载。
+2. 在 TWRP 终端或 adb shell 里用 GNU parted 操作磁盘
+   （TWRP 未自带时自行推入 parted 二进制）：
+
+   ```
+   parted /dev/block/sda
+   (parted) unit GB
+   (parted) print
+   (parted) resizepart 28 41.9GB
+   (parted) mkpart esp fat32 41.9GB 42.4GB
+   (parted) set 29 esp on
+   (parted) mkpart linux ext4 42.4GB 100%
+   (parted) print
+   (parted) quit
+   ```
+
+   要点：`resizepart` 会交互确认终点，照上面数值输入；结果应为
+   28 号 userdata 30 GB、29 号 esp 500 MB、30 号 linux 吃满剩余空间。
+   `mkpart` 只写分区表条目、不格式化：esp 至今保持未格式化、未使用
+   （将来要用先 `mkfs.vfat`）；linux 分区的文件系统由刷入的 rootfs
+   镜像自带。**1–27 号原厂分区和 persist 一律不碰。**
+3. 回到 fastboot，按下一节刷机说明刷入 boot 与 rootfs；
+   首次安装额外执行一次 `fastboot erase dtbo_a`（清掉 A 槽的
+   原厂 DTBO，本镜像自带设备树）。
+
+警告：分区操作不可逆，userdata 里的数据会全部丢失；坐标输错可能
+变砖，救砖走后面的 MSM 一节（但布局要从本节重做）。
 
 ## 刷机说明
 
