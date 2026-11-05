@@ -1,0 +1,7 @@
+[Unit]
+Description=Battery charge hysteresis check (80/50)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/charge-limit.sh
