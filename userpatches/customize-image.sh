@@ -14,6 +14,18 @@ apt-get install -y xfce4 lightdm xrdp xorgxrdp neard gpiod wpasupplicant dhcpcd-
 # restore it for the programs the overlay ships.
 chmod +x /usr/local/bin/* 2>/dev/null || true
 
+# The device tree requests DSP firmware under postmarketos/ names,
+# while the blobs ship in the BSP package under qcom/ paths. The
+# copies on the reference device were hash-verified identical to
+# these package files; materialize them here so ADSP/CDSP/Venus
+# load on a fresh image. (SLPI stays unloaded, as on the reference
+# device; the GPU zap firmware is referenced by its qcom/ path
+# directly and needs no copy.)
+install -d /lib/firmware/postmarketos
+cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mbn
+cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
+cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
+
 # qca6390-wlan-enable.service is intentionally not enabled here:
 # wifi-join.service pulls it in via Wants= at boot.
 systemctl enable charge-limit.timer
