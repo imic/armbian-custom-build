@@ -13,10 +13,21 @@ if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
 	# marker file above was placed into the overlay by the workflow.
 	# Device-function packages still install; the desktop stack is
 	# skipped, leaving a pure minimal image.
-	apt-get install -y neard gpiod wpasupplicant dhcpcd-base
+	apt-get install -y gpiod wpasupplicant dhcpcd-base
 else
-	apt-get install -y xfce4 lightdm xrdp xorgxrdp neard gpiod wpasupplicant dhcpcd-base
+	apt-get install -y xfce4 lightdm xrdp xorgxrdp gpiod wpasupplicant dhcpcd-base
 fi
+
+# neard has no installation candidate in the Ubuntu resolute
+# archive (it was also dropped from Debian trixie). The reference
+# device runs Debian's neard 0.20-3, hand-installed from this
+# exact pool .deb - its daemon binary is byte-identical to the
+# reference device's installed copy. Fetch it pinned, verify the
+# hash, and install locally; dependencies resolve from resolute.
+curl -fsSL http://deb.debian.org/debian/pool/main/n/neard/neard_0.20-3_arm64.deb -o /tmp/neard.deb
+echo "01b53d637ec554cc2af810d82dd77327785e06eae00c135e698299dc678788e3  /tmp/neard.deb" | sha256sum -c -
+apt-get install -y /tmp/neard.deb
+rm -f /tmp/neard.deb
 
 # Files committed through the GitHub API lose their executable bit;
 # restore it for the programs the overlay ships.
