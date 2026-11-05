@@ -9,6 +9,11 @@ verified on the running device:
   tlmm 20/21 + userspace service; pcie1 clkreq pinctrl group removed
   (gpio83 conflict); bluetooth loses its pinctrl/enable-gpios and is
   fed from the PMU AON LDO instead of the qca639x power domain
+- PCIe0 PHY: drop the baseline's power-domains = <&qca639x> from
+  &pcie0_phy. In this kernel build nothing registers that power
+  domain, so the PHY probe deadlocks waiting for it and the QCA6390
+  never enumerates (no WiFi; found on the run-#6 image, 2026-11-06).
+  The PHY runs on its direct vdda supplies, as in the reference tree
 - Panel: MDSS/DSI + Samsung AMB655X panel, panel AVDD fixed
   regulator, panel pinctrl states, dispcc and GPU enabled (zap
   firmware path set)
@@ -21,8 +26,8 @@ verified on the running device:
 Rebased onto the linux-6.18.y (f45ed76) + in-tree series baseline of
 2026-11-05; compiled DTB verified against the reference device tree
 with only the two ruled removals (ramoops node, hardcoded BT address)
-and upstream 6.18.60 dtsi drift (venus OPP table, mmcx power domain,
-pcie0-phy power-domains) remaining.
+and upstream 6.18.60 dtsi drift (venus OPP table, mmcx power domain)
+remaining.
 
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
@@ -117,7 +122,15 @@ pcie0-phy power-domains) remaining.
      };
  };
  
-@@ -750,6 +783,45 @@
+@@ -622,7 +655,6 @@
+ 	vdda-phy-supply = <&vreg_l5a_0p88>;
+ 	vdda-pll-supply = <&vreg_l9a_1p2>;
+ 	status = "okay";
+-	power-domains = <&qca639x>;
+ };
+ 
+ &pcie1 {
+@@ -750,6 +782,45 @@
  		drive-strength = <0x02>;
  		bias-pull-down;
  	};
@@ -163,7 +176,7 @@ pcie0-phy power-domains) remaining.
  };
  
  &uart6 {
-@@ -757,12 +829,8 @@
+@@ -757,12 +828,8 @@
  
  	bluetooth {
  		compatible = "qcom,qca6390-bt";
@@ -178,7 +191,7 @@ pcie0-phy power-domains) remaining.
  	};
  };
  
-@@ -783,17 +851,33 @@
+@@ -783,17 +850,33 @@
  };
  
  &usb_1 {
@@ -219,7 +232,7 @@ pcie0-phy power-domains) remaining.
  };
  
  &usb_1_hsphy {
-@@ -830,3 +914,91 @@
+@@ -830,3 +913,91 @@
  	firmware-name = "postmarketos/venus.mbn";
  	status = "okay";
  };

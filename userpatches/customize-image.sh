@@ -22,9 +22,24 @@ if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
 	# marker file above was placed into the overlay by the workflow.
 	# Device-function packages still install; the desktop stack is
 	# skipped, leaving a pure minimal image.
-	apt-get install -y gpiod wpasupplicant dhcpcd-base
+	# polkitd even without a desktop: timedated & friends ask it for
+	# authorization, and with no daemon the firstrun timezone step is
+	# denied even for root.
+	apt-get install -y polkitd gpiod wpasupplicant dhcpcd-base
 else
-	apt-get install -y xfce4 lightdm xrdp xorgxrdp gpiod wpasupplicant dhcpcd-base
+	# --install-recommends: the build chroot's apt skips Recommends,
+	# which silently drops the xfce4 metapackage's whole second tier
+	# (polkit agent, terminal, notifyd, gvfs, ...) - the reference
+	# device got that tier from a plain apt install on the running
+	# system. polkitd is named explicitly as well: with no polkit
+	# daemon the firstrun timezone step and every desktop privilege
+	# action are denied. The Chinese set (CJK fonts, zh-hans language
+	# pack, fcitx5 with the Pinyin engine) is named explicitly too;
+	# nothing Recommends it.
+	apt-get install -y --install-recommends xfce4 lightdm xrdp xorgxrdp polkitd gpiod wpasupplicant dhcpcd-base fonts-noto-cjk language-pack-zh-hans fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5
+	# Make fcitx5 the system input method framework (per-user
+	# im-config state would not exist on a fresh image).
+	im-config -n fcitx5 || true
 fi
 
 # neard has no installation candidate in the Ubuntu resolute
