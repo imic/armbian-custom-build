@@ -26,6 +26,13 @@ on:
           - build
           - kernel
         default: build
+      desktop:
+        description: Install the Xfce desktop stack
+        type: choice
+        options:
+          - "yes"
+          - "no"
+        default: "yes"
 
 permissions:
   contents: write
@@ -35,6 +42,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Select minimal variant (no desktop)
+        if: inputs.desktop == 'no'
+        run: |
+          mkdir -p userpatches/overlay/etc
+          echo minimal > userpatches/overlay/etc/armbian-variant
       - name: Build with the Armbian framework
         uses: armbian/build@main
         with:
