@@ -14,22 +14,22 @@
 |---|---|
 | `kernel/archive/sm8250-6.18/nfc-mifare-tagcmd.patch` | NFC：NCI 核心支持 NXP 私有 TAG-CMD 接口（0x80），使 SN100T 能读 MIFARE Classic 卡；所有路径按控制器/卡类型门控，对其它设备零行为变化 |
 | `kernel/archive/sm8250-6.18/qcom-pon-reset-reason.patch` | PMIC PON：开机时把上一次断电/复位原因打进内核日志（GEN2），用于无日志硬重启的定性 |
-| `kernel/archive/sm8250-6.18/kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点与 WiFi/BT 使能 GPIO hog、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、充电器与 VBUS、马达；并删去框架基线给 pcie0_phy 挂的 `power-domains = <&qca639x>`——本构建里无人注册该电源域，PHY 探测会死等它、QCA6390 永不枚举（run #6 实测无 WiFi 的根因） |
+| `kernel/archive/sm8250-6.18/kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点（BT 使能 tlmm21 由 PMU 电源时序器驱动；WiFi 使能 tlmm20 保留 GPIO hog——使能被 hog 常按时控制器无法真正断电重设、任何二次 setup 都会卡死其 UART，run #7 实测）、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、充电器与 VBUS、马达；并删去框架基线给 pcie0_phy 挂的 `power-domains = <&qca639x>`——本构建里无人注册该电源域，PHY 探测会死等它、QCA6390 永不枚举（run #6 实测无 WiFi 的根因） |
 | `kernel/archive/sm8250-6.18/samsung-amb655x-panel.patch` | 面板驱动：主线与框架补丁集都没有 AMB655X（1080x2400 DSC）驱动，缺了它 MSM DRM 无法绑定、实体屏永不亮。此驱动为参考机 TEST 内核所带版本（sm8250-mainline 面板栈），已在本机面板实证；仅一处 API 适配（DSI 核心删掉的 write_long_multi 映射到 write_seq_multi，与现行主线三星 DSC 面板同法） |
 | `config/kernel/linux-sm8250-current.config` | 内核配置：以框架版为底，RFKILL、POWER_RESET_QCOM_PON 改 =y，并内置 NFC 全套 =y（功能随 boot 镜像走，不依赖 rootfs 模块）；另钉 CONFIG_DRM_PANEL_SAMSUNG_AMB655X=y 启用上面的面板驱动 |
-| `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、NFC 监控、自动熄屏、音量键调亮度、WiFi 加入、QCA6390 使能、蓝牙地址）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
-| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：安装桌面栈（xfce4/lightdm/xrdp，与参考机同款；带 --install-recommends，否则构建 chroot 的 apt 跳过 Recommends 会整批丢掉 polkit 代理/终端/通知等 xfce4 的第二层包）、polkitd（两个变体都装；无 polkit 守护时 firstrun 设时区与桌面提权全被拒）、中文集（fonts-noto-cjk 显示、language-pack-zh-hans、fcitx5 + 拼音，并 im-config 设为系统默认输入法）、gpiod 等包（neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 只装不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
+| `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、NFC 监控、自动熄屏、音量键调亮度；WiFi 加入与蓝牙改址服务已退役、仅存档不启用）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
+| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：polkitd（无 polkit 守护时 firstrun 设时区与提权全被拒）、bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
 | `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡）；由该源码以 `cargo build --release --target aarch64-unknown-linux-musl` 构建的二进制以 base64 形式存放在 `overlay/usr/local/bin/nfctool.b64`（仓库推送通道只收 UTF-8 文本；customize 在构建时解码、校验 sha256 d11057ab… 后落位 /usr/local/bin/nfctool，校验不过即构建失败），镜像自带、skel 有桌面启动器；卡库数据（~/.nfctool-cards.json）属个人数据，仍按刷后恢复清单处理 |
 
 ## 构建
 
 - **GitHub Actions**：先在仓库 Actions 页启用 Actions（fork 默认关闭，仓主点一次），
-  然后 Actions → “Build kebab image” → Run workflow，可选机型/发行版/整图或只编内核，以及 desktop（yes = 带 Xfce 桌面，默认；no = 纯 minimal，不装桌面栈）。
+  然后 Actions → “Build kebab image” → Run workflow，可选机型/发行版/整图或只编内核，（desktop 输入已失效：镜像恒为 minimal，桌面在设备上装）。
   产物由官方 armbian/build Action 生成并发布到 Releases。
   注意：workflow 文件 `.github/workflows/build-kebab.yml` 因 GitHub App 权限限制
   无法经 API 推送，需仓主在网页端手动新建一次（内容见仓库外随附说明），之后照常使用。
 - **本地**：`./compile.sh build BOARD=oneplus-kebab BRANCH=current RELEASE=resolute BUILD_MINIMAL=yes KERNEL_CONFIGURE=no`
-  （桌面由 customize-image.sh 安装，不要加 BUILD_DESKTOP)。
+  （镜像恒为 minimal，不要加 BUILD_DESKTOP；桌面在设备上运行 install-desktop.sh 安装)。
 
 首次构建出的镜像先不要急着刷：把产物 DTB 与内嵌 config 和参考机逐项对一遍
 再决定刷机。刷机方法见下节。
@@ -156,9 +156,10 @@ Some_Random_Username 发布，按区域分（均为 Android 11 底包）：
 
 镜像是通用的，不含任何个人/设备专属数据。下列内容在设备上本地生成，不入库：
 
-- WiFi 凭据：设备上的 `/root/wpa.conf`（wifi-join.sh 读取）
-- WiFi MAC 钉定（可选）：`/etc/wifi-join.conf` 里写 `WIFI_MAC=...`；不写则不钉
-- 蓝牙地址：由 machine-id 派生（bt-fixed-mac.sh)，不写死在设备树
+- WiFi 凭据：首次运行向导里填写，写入 netplan 配置（WiFi 由 netplan
+  接管；旧的 wifi-join/wpa.conf 路径已于 2026-11-06 退役）
+- 蓝牙地址：芯片 NVM 默认地址（00:00:00:00:5A:AD），稳定不变；
+  旧的 bt-fixed-mac 改址服务会触发控制器重设并将其卡死，已退役
 - SSH 密钥、sudo 配置、NFC 卡库（~/.nfctool-cards.json)：均为设备本地数据
 
 ## 已知问题

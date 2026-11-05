@@ -29,37 +29,21 @@ if [ -f /usr/local/bin/nfctool.b64 ]; then
 fi
 
 apt-get update
-if [ -f /etc/armbian-variant ] && grep -qx minimal /etc/armbian-variant; then
-	# "desktop: no" was selected when dispatching the workflow: the
-	# marker file above was placed into the overlay by the workflow.
-	# Device-function packages still install; the desktop stack is
-	# skipped, leaving a pure minimal image.
-	# polkitd even without a desktop: timedated & friends ask it for
-	# authorization, and with no daemon the firstrun timezone step is
-	# denied even for root.
-	# bluez in both variants too: bt-fixed-mac.service (enabled for
-	# both) drives bluetoothctl, and without the bluez package there
-	# is no Bluetooth userspace at all - the kernel brings hci0 up
-	# (QCA6390 setup completes) but nothing can pair or connect.
-	apt-get install -y polkitd bluez gpiod wpasupplicant dhcpcd-base
-else
-	# --install-recommends: the build chroot's apt skips Recommends,
-	# which silently drops the xfce4 metapackage's whole second tier
-	# (polkit agent, terminal, notifyd, gvfs, ...) - the reference
-	# device got that tier from a plain apt install on the running
-	# system. polkitd is named explicitly as well: with no polkit
-	# daemon the firstrun timezone step and every desktop privilege
-	# action are denied. The Chinese set (CJK fonts, zh-hans language
-	# pack, fcitx5 with the Pinyin engine) is named explicitly too;
-	# nothing Recommends it. Same for bluez (the kernel brings hci0
-	# up on its own, but pairing needs the daemon and bluetoothctl -
-	# bt-fixed-mac.service calls it) and blueman, the desktop pairing
-	# applet; neither is in xfce4's Recommends chain.
-	apt-get install -y --install-recommends xfce4 lightdm xrdp xorgxrdp polkitd bluez blueman gpiod wpasupplicant dhcpcd-base fonts-noto-cjk language-pack-zh-hans fcitx5 fcitx5-chinese-addons fcitx5-frontend-gtk3 fcitx5-frontend-qt5
-	# Make fcitx5 the system input method framework (per-user
-	# im-config state would not exist on a fresh image).
-	im-config -n fcitx5 || true
-fi
+# System packages only - the image is always minimal now. The Xfce
+# desktop is NOT baked in (user ruling 2026-11-06): even with
+# --install-recommends, the build-chroot install resolved to a
+# noticeably heavier set than the hand install on the reference
+# device, so the desktop installs on the device itself via
+# /usr/local/bin/install-desktop.sh - a plain apt install on the
+# running system, exactly like the manual install it replaces. The
+# workflow's desktop input and the /etc/armbian-variant marker no
+# longer change anything here.
+# polkitd: timedated & friends ask it for authorization, and with
+# no daemon the firstrun timezone step is denied even for root.
+# bluez: without it there is no Bluetooth userspace at all - the
+# kernel brings hci0 up (QCA6390 setup completes) but nothing can
+# pair or connect.
+apt-get install -y polkitd bluez gpiod wpasupplicant dhcpcd-base
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -108,21 +92,26 @@ cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mb
 cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
 
-# qca6390-wlan-enable.service is intentionally not enabled here:
-# wifi-join.service pulls it in via Wants= at boot.
+# Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
+# - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
+#   in via Wants=): WiFi is owned by netplan, configured in the
+#   firstlogin wizard - the arrangement that actually works since
+#   run #7. wifi-join's /root/wpa.conf path is gone with it.
+# - bt-fixed-mac.service: its bluetoothctl mgmt.public-addr call
+#   forces a QCA re-setup that wedged the controller on run #7,
+#   and the chip's NVM default address (00:00:00:00:5A:AD) is
+#   stable anyway, so the fixed address bought nothing.
 systemctl enable charge-limit.timer
 systemctl enable nfc-watch.service
 systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
-systemctl enable wifi-join.service
-systemctl enable bt-fixed-mac.service
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service
 
 systemctl set-default multi-user.target
 # The desktop is on-demand only (user ruling 2026-11-06): lightdm is
-# installed with the desktop variant but must not start at boot or
+# installed afterwards via install-desktop.sh; it must not start at boot or
 # pull the graphical target in - a headless box has no use for an X
 # server sitting on a blank panel. Start it by hand when a local
 # desktop is wanted: systemctl start lightdm. xrdp is unaffected
