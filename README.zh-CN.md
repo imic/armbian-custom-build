@@ -14,7 +14,7 @@
 | `kernel/sm8250-current/kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点与 WiFi/BT 使能 GPIO hog、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、充电器与 VBUS、马达 |
 | `config/kernel/linux-sm8250-current.config` | 内核配置：以框架版为底，RFKILL、POWER_RESET_QCOM_PON 改 =y，并内置 NFC 全套 =y（功能随 boot 镜像走，不依赖 rootfs 模块） |
 | `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、NFC 监控、自动熄屏、音量键调亮度、WiFi 加入、QCA6390 使能、蓝牙地址）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
-| `customize-image.sh` | 构建收尾在 rootfs 内执行：安装桌面栈（xfce4/lightdm/xrdp，与参考机同款）、neard/gpiod 等包，enable 各服务，默认目标 multi-user；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致） |
+| `customize-image.sh` | 构建收尾在 rootfs 内执行：安装桌面栈（xfce4/lightdm/xrdp，与参考机同款）、neard/gpiod 等包，enable 各服务，默认目标 multi-user；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
 | `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡）；源码在此；二进制需在本机用 `cargo build --release --target aarch64-unknown-linux-musl` 构建后放进 `overlay/usr/local/bin/`（参考机现行二进制即如此构建） |
 
 ## 构建

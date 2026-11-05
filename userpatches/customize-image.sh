@@ -36,3 +36,25 @@ systemctl enable wifi-join.service
 systemctl enable bt-fixed-mac.service
 
 systemctl set-default multi-user.target
+
+# --- Firmware pruning ---------------------------------------------------
+# The board config installs the -full firmware tier (~2.3 GB covering
+# dozens of SoCs and WiFi chips). This hardware (SM8250 + QCA6390)
+# can only ever request ~105 MB of it, measured on the reference
+# device: the qcom/sm8250 tree (OnePlus files only), the ath11k
+# QCA6390 target, the qca Bluetooth firmware, the loose top-level
+# QCA files, regulatory.db and the postmarketos/ DSP copies made
+# above. Delete everything else.
+FW=/lib/firmware
+[ -d "$FW/qcom/sm8250" ] && [ -d "$FW/ath11k" ] || {
+	echo "customize: unexpected firmware layout, refusing to prune" >&2
+	exit 1
+}
+echo "customize: firmware before pruning: $(du -sh $FW | cut -f1)"
+find $FW/qcom -mindepth 1 -maxdepth 1 ! -name sm8250 -exec rm -rf {} +
+find $FW/qcom/sm8250 -mindepth 1 -maxdepth 1 -type d ! -name OnePlus -exec rm -rf {} +
+find $FW/ath11k -mindepth 1 -maxdepth 1 ! -name QCA6390 -exec rm -rf {} +
+find $FW -mindepth 1 -maxdepth 1 -type d \
+	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos \
+	-exec rm -rf {} +
+echo "customize: firmware after pruning: $(du -sh $FW | cut -f1)"
