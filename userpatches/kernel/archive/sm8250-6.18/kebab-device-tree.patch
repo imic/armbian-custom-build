@@ -6,9 +6,15 @@ verified on the running device:
 - QCA6390: standalone qca6390-pmu node with AON LDO; qca639x keeps the
   verified supply rails (vddpmu on s6a) and loses the baseline's new
   pinctrl-driven wlan-en in favour of the wlan-bt-enable GPIO hog on
-  tlmm 20/21 + userspace service; pcie1 clkreq pinctrl group removed
-  (gpio83 conflict); bluetooth loses its pinctrl/enable-gpios and is
-  fed from the PMU AON LDO instead of the qca639x power domain
+  tlmm 20 (WLAN only); pcie1 clkreq pinctrl group removed (gpio83
+  conflict); bluetooth loses its pinctrl/enable-gpios and is fed from
+  the PMU AON LDO instead of the qca639x power domain. BT enable
+  (tlmm 21) is driven by the PMU power sequencer (bt-enable-gpios +
+  bt_en pinctrl on the PMU node, wired like qrb5165-rb5): with the
+  enable hogged high the controller could never power-cycle, so any
+  re-setup desynced its UART and wedged it (found on run #7,
+  2026-11-06; the hog keeps tlmm 20 only - WLAN has no pwrseq
+  consumer on this board)
 - PCIe0 PHY: drop the baseline's power-domains = <&qca639x> from
   &pcie0_phy. In this kernel build nothing registers that power
   domain, so the PHY probe deadlocks waiting for it and the QCA6390
@@ -27,11 +33,13 @@ Rebased onto the linux-6.18.y (f45ed76) + in-tree series baseline of
 2026-11-05; compiled DTB verified against the reference device tree
 with only the two ruled removals (ramoops node, hardcoded BT address)
 and upstream 6.18.60 dtsi drift (venus OPP table, mmcx power domain)
-remaining.
+remaining. The BT-enable pwrseq delta was
+compiled and DTB-diffed on 2026-11-06 (delta limited to the hog
+gpios/line-name and the PMU bt-enable-gpios/pinctrl).
 
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
-@@ -192,21 +192,50 @@
+@@ -192,21 +192,56 @@
  	qca639x: qca639x {
  		compatible = "qcom,qca6390";
  		#power-domain-cells = <0>;
@@ -51,13 +59,18 @@ remaining.
 -		pinctrl-names = "default", "sleep";
 -		pinctrl-0 = <&wlan_en_active>;
 -		pinctrl-1 = <&wlan_en_sleep>;
-+		/* WLAN/BT enable GPIOs (tlmm 20/21) are driven by the
-+		 * wlan-bt-enable DT hog and by userspace
-+		 * (qca6390-wlan-enable.service); qca639x does not probe. */
++		/* WLAN enable (tlmm 20) stays on the wlan-bt-enable
++		 * DT hog; BT enable (tlmm 21) is driven by the
++		 * qca6390-pmu power sequencer (bt-enable-gpios on the
++		 * PMU node). qca639x does not probe. */
 +	};
 +
 +	qca6390_pmu: qca6390-pmu {
 +		compatible = "qcom,qca6390-pmu";
+ 
+-		wlan-en-gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&bt_en_active>;
 +
 +		vddio-supply = <&vreg_s4a_1p8>;
 +		vddaon-supply = <&vreg_s6a_0p95>;
@@ -68,14 +81,15 @@ remaining.
 +		vddpcie1p3-supply = <&vreg_s8c_1p3>;
 +		vddpcie1p9-supply = <&vreg_s5a_1p9>;
 +
++		bt-enable-gpios = <&tlmm 21 GPIO_ACTIVE_HIGH>;
++
 +		regulators {
 +			vreg_pmu_aon_0p59: ldo1 {
 +				regulator-name = "vreg_pmu_aon_0p59";
 +			};
 +		};
 +	};
- 
--		wlan-en-gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
++
 +	panel_avdd: regulator-panel-avdd {
 +		compatible = "regulator-fixed";
 +		regulator-name = "panel_avdd_5p5";
@@ -89,7 +103,7 @@ remaining.
  	};
  
  	battery: battery {
-@@ -522,7 +551,7 @@
+@@ -522,7 +557,7 @@
  };
  
  &dispcc {
@@ -98,7 +112,7 @@ remaining.
  };
  
  &gmu {
-@@ -542,7 +571,11 @@
+@@ -542,7 +577,11 @@
  };
  
  &gpu {
@@ -111,7 +125,7 @@ remaining.
  };
  
  &i2c1 {
-@@ -555,8 +588,8 @@
+@@ -555,8 +594,8 @@
          interrupt-parent = <&tlmm>;
          interrupts = <0x6f IRQ_TYPE_LEVEL_HIGH>;
  
@@ -122,7 +136,7 @@ remaining.
      };
  };
  
-@@ -622,7 +655,6 @@
+@@ -622,7 +661,6 @@
  	vdda-phy-supply = <&vreg_l5a_0p88>;
  	vdda-pll-supply = <&vreg_l9a_1p2>;
  	status = "okay";
@@ -130,16 +144,16 @@ remaining.
  };
  
  &pcie1 {
-@@ -750,6 +782,45 @@
+@@ -750,6 +788,45 @@
  		drive-strength = <0x02>;
  		bias-pull-down;
  	};
 +
 +	wlan_bt_enable_hog: wlan-bt-enable-hog {
 +		gpio-hog;
-+		gpios = <20 GPIO_ACTIVE_HIGH>, <21 GPIO_ACTIVE_HIGH>;
++		gpios = <20 GPIO_ACTIVE_HIGH>;
 +		output-high;
-+		line-name = "wlan-bt-enable";
++		line-name = "wlan-enable";
 +	};
 +
 +	panel_reset_state: panel-reset-state {
@@ -176,7 +190,7 @@ remaining.
  };
  
  &uart6 {
-@@ -757,12 +828,8 @@
+@@ -757,12 +834,8 @@
  
  	bluetooth {
  		compatible = "qcom,qca6390-bt";
@@ -187,11 +201,11 @@ remaining.
 -		power-domains = <&qca639x>;
 -		enable-gpios = <&tlmm 21 GPIO_ACTIVE_HIGH>;
 +		vddaon-supply = <&vreg_pmu_aon_0p59>;
-+		/* BT enable (tlmm 21) driven by userspace; see qca6390-wlan-enable. */
++		/* BT enable (tlmm 21) driven by the qca6390-pmu power sequencer. */
  	};
  };
  
-@@ -783,17 +850,33 @@
+@@ -783,17 +856,33 @@
  };
  
  &usb_1 {
@@ -232,7 +246,7 @@ remaining.
  };
  
  &usb_1_hsphy {
-@@ -830,3 +913,91 @@
+@@ -830,3 +919,91 @@
  	firmware-name = "postmarketos/venus.mbn";
  	status = "okay";
  };
