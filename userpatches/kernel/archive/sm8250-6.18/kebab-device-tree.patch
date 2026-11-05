@@ -3,9 +3,11 @@ arm64: dts: qcom: sm8250-oneplus-kebab: full hardware enablement
 Bring the kebab device tree from the framework baseline to the state
 verified on the running device:
 - NFC (SN100T): split enable/firmware GPIOs (gpio83 VEN, gpio110 FIRM)
-- QCA6390: standalone qca6390-pmu node with AON LDO; wlan node takes
-  the dtsi supply naming; wlan-bt-enable GPIO hog on tlmm 20/21;
-  pcie1 clkreq pinctrl group removed (gpio83 conflict); bluetooth
+- QCA6390: standalone qca6390-pmu node with AON LDO; qca639x keeps the
+  verified supply rails (vddpmu on s6a) and loses the baseline's new
+  pinctrl-driven wlan-en in favour of the wlan-bt-enable GPIO hog on
+  tlmm 20/21 + userspace service; pcie1 clkreq pinctrl group removed
+  (gpio83 conflict); bluetooth loses its pinctrl/enable-gpios and is
   fed from the PMU AON LDO instead of the qca639x power domain
 - Panel: MDSS/DSI + Samsung AMB655X panel, panel AVDD fixed
   regulator, panel pinctrl states, dispcc and GPU enabled (zap
@@ -16,25 +18,34 @@ verified on the running device:
 - PM8150B charger + VBUS regulator enabled; battery monitoring
 - Haptics enabled with boost GPIO and 150 Hz play rate
 
+Rebased onto the linux-6.18.y (f45ed76) + in-tree series baseline of
+2026-11-05; compiled DTB verified against the reference device tree
+with only the two ruled removals (ramoops node, hardcoded BT address)
+and upstream 6.18.60 dtsi drift (venus OPP table, mmcx power domain,
+pcie0-phy power-domains) remaining.
+
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
-@@ -190,9 +190,27 @@
- 	};
- 
+@@ -192,21 +192,50 @@
  	qca639x: qca639x {
--		compatible = "qcom,qca6390", "qcom,qca6390-pmu";
-+		compatible = "qcom,qca6390";
+ 		compatible = "qcom,qca6390";
  		#power-domain-cells = <0>;
- 
-+		vddio-supply = <&vreg_s4a_1p8>;
-+		vddaon-supply = <&vreg_s6a_0p95>;
-+		vddpmu-supply = <&vreg_s6a_0p95>;
-+		vddrfa1-supply = <&vreg_s2f_0p95>;
-+		vddrfa2-supply = <&vreg_s8c_1p3>;
-+		vddrfa3-supply = <&vreg_s5a_1p9>;
-+		vddpcie1-supply = <&vreg_s8c_1p3>;
-+		vddpcie2-supply = <&vreg_s5a_1p9>;
+-        
 +
++		vddio-supply = <&vreg_s4a_1p8>;
+ 		vddaon-supply = <&vreg_s6a_0p95>;
+-		vddpmu-supply = <&vreg_s2f_0p95>;
++		vddpmu-supply = <&vreg_s6a_0p95>;
+ 		vddrfa1-supply = <&vreg_s2f_0p95>;
+ 		vddrfa2-supply = <&vreg_s8c_1p3>;
+ 		vddrfa3-supply = <&vreg_s5a_1p9>;
+ 		vddpcie1-supply = <&vreg_s8c_1p3>;
+ 		vddpcie2-supply = <&vreg_s5a_1p9>;
+-		vddio-supply = <&vreg_s4a_1p8>;
+ 
+-		pinctrl-names = "default", "sleep";
+-		pinctrl-0 = <&wlan_en_active>;
+-		pinctrl-1 = <&wlan_en_sleep>;
 +		/* WLAN/BT enable GPIOs (tlmm 20/21) are driven by the
 +		 * wlan-bt-enable DT hog and by userspace
 +		 * (qca6390-wlan-enable.service); qca639x does not probe. */
@@ -44,24 +55,22 @@ verified on the running device:
 +		compatible = "qcom,qca6390-pmu";
 +
 +		vddio-supply = <&vreg_s4a_1p8>;
- 		vddaon-supply = <&vreg_s6a_0p95>;
- 		vddpmu-supply = <&vreg_s6a_0p95>;
- 		vddrfa0p95-supply = <&vreg_s6a_0p95>;
-@@ -200,10 +218,24 @@
- 		vddrfa1p9-supply = <&vreg_s5a_1p9>;
- 		vddpcie1p3-supply = <&vreg_s8c_1p3>;
- 		vddpcie1p9-supply = <&vreg_s5a_1p9>;
--		vddio-supply = <&vreg_s4a_1p8>;
- 
--		/* WLAN/BT enable GPIOs (tlmm 20/21) left unclaimed so userspace
--		 * (qca6390-wlan-enable.service) can drive them; qca639x does not probe. */
++		vddaon-supply = <&vreg_s6a_0p95>;
++		vddpmu-supply = <&vreg_s6a_0p95>;
++		vddrfa0p95-supply = <&vreg_s6a_0p95>;
++		vddrfa1p3-supply = <&vreg_s8c_1p3>;
++		vddrfa1p9-supply = <&vreg_s5a_1p9>;
++		vddpcie1p3-supply = <&vreg_s8c_1p3>;
++		vddpcie1p9-supply = <&vreg_s5a_1p9>;
++
 +		regulators {
 +			vreg_pmu_aon_0p59: ldo1 {
 +				regulator-name = "vreg_pmu_aon_0p59";
 +			};
 +		};
 +	};
-+
+ 
+-		wlan-en-gpios = <&tlmm 20 GPIO_ACTIVE_HIGH>;
 +	panel_avdd: regulator-panel-avdd {
 +		compatible = "regulator-fixed";
 +		regulator-name = "panel_avdd_5p5";
@@ -75,7 +84,7 @@ verified on the running device:
  	};
  
  	battery: battery {
-@@ -519,7 +551,7 @@
+@@ -522,7 +551,7 @@
  };
  
  &dispcc {
@@ -84,7 +93,7 @@ verified on the running device:
  };
  
  &gmu {
-@@ -539,7 +571,11 @@
+@@ -542,7 +571,11 @@
  };
  
  &gpu {
@@ -97,7 +106,7 @@ verified on the running device:
  };
  
  &i2c1 {
-@@ -552,8 +588,8 @@
+@@ -555,8 +588,8 @@
          interrupt-parent = <&tlmm>;
          interrupts = <0x6f IRQ_TYPE_LEVEL_HIGH>;
  
@@ -108,7 +117,7 @@ verified on the running device:
      };
  };
  
-@@ -746,6 +782,47 @@
+@@ -750,6 +783,45 @@
  		drive-strength = <0x02>;
  		bias-pull-down;
  	};
@@ -139,7 +148,6 @@ verified on the running device:
 +		function = "gpio";
 +		drive-strength = <8>;
 +		output-high;
-+		bias-disable;
 +	};
 +
 +	panel_avdd_state: panel-avdd-state {
@@ -147,7 +155,6 @@ verified on the running device:
 +		function = "gpio";
 +		drive-strength = <8>;
 +		output-high;
-+		bias-disable;
 +	};
 +};
 +
@@ -156,16 +163,22 @@ verified on the running device:
  };
  
  &uart6 {
-@@ -753,7 +830,7 @@
+@@ -757,12 +829,8 @@
  
  	bluetooth {
  		compatible = "qcom,qca6390-bt";
+-		pinctrl-names = "default", "sleep";
+-		pinctrl-0 = <&bt_en_active>;
+-		pinctrl-1 = <&bt_en_sleep>;
+-
 -		power-domains = <&qca639x>;
+-		enable-gpios = <&tlmm 21 GPIO_ACTIVE_HIGH>;
 +		vddaon-supply = <&vreg_pmu_aon_0p59>;
- 		/* BT enable (tlmm 21) driven by userspace; see qca6390-wlan-enable. */
++		/* BT enable (tlmm 21) driven by userspace; see qca6390-wlan-enable. */
  	};
  };
-@@ -775,17 +852,33 @@
+ 
+@@ -783,17 +851,33 @@
  };
  
  &usb_1 {
@@ -206,10 +219,10 @@ verified on the running device:
  };
  
  &usb_1_hsphy {
-@@ -823,3 +916,91 @@
+@@ -830,3 +914,91 @@
+ 	firmware-name = "postmarketos/venus.mbn";
  	status = "okay";
  };
- 
 +
 +&mdss_dsi0 {
 +	vdda-supply = <&vreg_l9a_1p2>;
