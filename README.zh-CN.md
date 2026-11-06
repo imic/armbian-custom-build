@@ -18,7 +18,7 @@
 | `kernel/archive/sm8250-6.18/samsung-amb655x-panel.patch` | 面板驱动：主线与框架补丁集都没有 AMB655X（1080x2400 DSC）驱动，缺了它 MSM DRM 无法绑定、实体屏永不亮。此驱动为参考机 TEST 内核所带版本（sm8250-mainline 面板栈），已在本机面板实证；仅一处 API 适配（DSI 核心删掉的 write_long_multi 映射到 write_seq_multi，与现行主线三星 DSC 面板同法） |
 | `config/kernel/linux-sm8250-current.config` | 内核配置：以框架版为底，RFKILL、POWER_RESET_QCOM_PON 改 =y，并内置 NFC 全套 =y（功能随 boot 镜像走，不依赖 rootfs 模块）；另钉 CONFIG_DRM_PANEL_SAMSUNG_AMB655X=y 启用上面的面板驱动 |
 | `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、nfctool NFC 常驻监控、蓝牙地址登记、自动熄屏、音量键调亮度；WiFi 加入、旧蓝牙改址与旧 python NFC watcher 已退役、仅存档不启用）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
-| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；polkitd 刻意不装（与原版一致，2026-11-06 实测裁定：它在场时 timedated 按 auth_admin_keep 拒绝 SSH 会话中的 firstrun 设时区，不在场时 root 直接放行；桌面日后装 polkit 代理包时 polkitd 会随其依赖自动回来）；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装，但禁用其自启（NFC 适配器默认无人占用，常驻监控由 nfctool watch 承担，2026-11-06 裁定））；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
+| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；polkitd 刻意不装（与原版一致，2026-11-06 实测裁定：它在场时 timedated 按 auth_admin_keep 拒绝 SSH 会话中的 firstrun 设时区，不在场时 root 直接放行；桌面日后装 polkit 代理包时 polkitd 会随其依赖自动回来）；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装，但禁用其自启（NFC 适配器默认无人占用，常驻监控由 nfctool watch 承担，2026-11-06 裁定）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
 | `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡；含 watch 常驻监控模式：以 JSONL 记录刷卡行为，与读卡以 /tmp/nfctool-read.lock 协调让路）；由该源码以 `cargo build --release --target aarch64-unknown-linux-musl` 构建的二进制以 base64 形式存放在 `overlay/usr/local/bin/nfctool.b64`（仓库推送通道只收 UTF-8 文本；customize 在构建时解码、校验 sha256 4f0ca0b4… 后落位 /usr/local/bin/nfctool，校验不过即构建失败），镜像自带、skel 有桌面启动器；卡库数据（~/.nfctool-cards.json）属个人数据，仍按刷后恢复清单处理 |
 
 ## 构建
@@ -110,8 +110,11 @@ boot 镜像（`*.boot_sm8250-oneplus-kebab.img`）和 rootfs 镜像（`*.rootfs.
 > 不过即构建失败），使打包槽位与实际安装槽位一致。注意：run #7 的
 > 镜像仍是 _b 戳（当时的 userpatches bootenv 覆盖路线被证实无效，
 > 见文件清单），刷 #7 后须照刷机步骤先在 fastboot 里 set-active=a。
-> **不要拿上游默认模板构建的镜像照本节刷 A**——
-> 槽位记账错位正是 2026-11-06 两次热重启掉进 900E 的头号嫌疑。
+> **不要拿上游默认模板构建的镜像照本节刷 A**——槽位记账错位正是
+> 2026-11-06 热重启掉进 900E 的已证实根因（戳记是打包标签、并非
+> 实际启动槽位，记账全记到了 B 头上，A 永不被标记成功）。run #8 起
+> 戳记已改对：首启实测 qbootctl 显示 A 槽 Active=1、Successful=1
+> （由系统自标），记账对齐已验证。
 
 ```bash
 fastboot getvar current-slot        # 必须是 a
@@ -121,8 +124,11 @@ fastboot flash linux <rootfs 镜像>
 fastboot reboot
 ```
 
-首次启动会进入 Armbian 首启向导（建用户、改密码）。刷完 rootfs 后，
-每台设备自己的数据要本地恢复，见下一节。
+首次启动会进入 Armbian 首启向导（建用户、改密码、配 WiFi、设时区）。
+向导的时区步在 SSH 里也能走通（镜像不装 polkitd，见文件清单）。
+语言选择若只给出基于地理位置的短名单：在 "Set user language based
+on your location? [Y/n]" 处答 **N**，名单会变成全量、时区改为手动选。
+刷完 rootfs 后，每台设备自己的数据要本地恢复，见下一节。
 
 只更新内核/boot 时（rootfs 不动）：只刷 `boot_a` 一步即可，
 回滚就是把旧 boot 镜像刷回 `boot_a`。
@@ -159,10 +165,22 @@ Some_Random_Username 发布，按区域分（均为 Android 11 底包）：
 - WiFi 凭据：首次运行向导里填写，写入 netplan 配置（WiFi 由 netplan
   接管；旧的 wifi-join/wpa.conf 路径已于 2026-11-06 退役）
 - 蓝牙地址：bt-provision.service 每次开机以 /etc/machine-id 派生地址（42: 开头）经 mgmt 登记——控制器上电时只有芯片占位地址（00:00:00:00:5A:AD），内核将其留在未配置名单、bluetoothd 不认，登记后才转正可用；旧 bt-fixed-mac 已退役
-- SSH 密钥、sudo 配置、NFC 卡库（~/.nfctool-cards.json)：均为设备本地数据
+- SSH 密钥、sudo 配置、NFC 卡库（~/.nfctool-cards.json）与刷卡事件
+  日志（~/nfc-log/events.jsonl，由 nfctool watch 追加写入）：均为
+  设备本地数据
 
 ## 已知问题
 
+- 显示：DSI PHY 在探测期偶发 PLL 锁定失败（dmesg 有 `DSI PLL lock
+  failed`），该次开机无引导画面/控制台，但后续 modeset 可恢复、桌面
+  能正常点亮（run #6–#8 均见，机制未定位，待查）。屏亮不起来先查
+  这行日志，不要先怀疑用户空间。
+- WiFi MAC 每次开机漂移（ath11k 不用 persist 里的地址，形如
+  00:03:7f:12:XX:XX），路由器按 MAC 钉的静态租约绑不上，局域网
+  地址随开机变；找机器去路由器租约表按主机名 oneplus-kebab 查。
+- 厂商固件集限制：BSP 固件集里没有 slpi.mbn，传感器中枢（SLPI）
+  不可用；ADSP 固件加载报 -22、音频未启用。均为固件集现状，非
+  镜像裁剪所致。
 - 充电限制（80/50 滞回）只能拦下一次充电会话，掐不断进行中的会话：
   长插电仍会充满到 100%。脚本在 overlay 里原样保留，缺陷在此登记。
 - 马达（haptics）：DT 与寄存器面已验证全对，但播放时无震感，剩余未知在
