@@ -38,12 +38,19 @@ apt-get update
 # running system, exactly like the manual install it replaces. The
 # workflow's desktop input and the /etc/armbian-variant marker no
 # longer change anything here.
-# polkitd: timedated & friends ask it for authorization, and with
-# no daemon the firstrun timezone step is denied even for root.
+# polkitd is deliberately NOT installed (user ruling 2026-11-06,
+# stock-image parity): with it present, timedated denies the
+# firstrun timezone step - timedate1's default policy is
+# auth_admin_keep and a caller in an SSH session has no auth agent
+# to answer (live A/B on run #8: polkitd up -> set-timezone denied
+# rc=1; polkitd stopped -> rc=0). With no polkitd, root callers
+# pass, exactly like the stock image. If a desktop later needs GUI
+# elevation, the polkit agent packages (policykit-1-gnome etc.)
+# depend on polkitd and pull it back in automatically.
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-apt-get install -y polkitd bluez gpiod wpasupplicant dhcpcd-base
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -105,6 +112,13 @@ systemctl enable charge-limit.timer
 systemctl enable nfc-watch.service
 systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
+# bt-provision.service is bt-fixed-mac's replacement (2026-11-06):
+# the QCA controller registers unconfigured and only becomes usable
+# after a public address is set over mgmt; bt-provision does exactly
+# that, once, after bluetoothd is up - safe now that the PMU power
+# sequencer owns the BT enable line and the re-setup it triggers can
+# really power-cycle the controller.
+systemctl enable bt-provision.service
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service

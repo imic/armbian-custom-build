@@ -1,0 +1,11 @@
+[Unit]
+Description=Provision Bluetooth public address (QCA6390 unconfigured controller)
+After=bluetooth.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/bt-provision.sh
+
+[Install]
+WantedBy=multi-user.target
