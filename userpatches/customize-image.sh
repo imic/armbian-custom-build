@@ -50,7 +50,10 @@ apt-get update
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
+# python3-gi: nfc-watch.py drives neard over D-Bus via Gio; without
+# it the watcher dies at import ('No module named gi') and NFC is
+# dead on a fresh flash (found live on run #8: restart loop).
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base python3-gi
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
