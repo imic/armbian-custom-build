@@ -25,7 +25,7 @@ if [ -f /usr/local/bin/nfctool.b64 ]; then
 	base64 -d /usr/local/bin/nfctool.b64 > /usr/local/bin/nfctool
 	rm -f /usr/local/bin/nfctool.b64
 	chmod +x /usr/local/bin/nfctool
-	echo "d11057aba8f89a06bf5dd7344e1c1507f3e0c0d027890af3051185b7eebdae33  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
+	echo "4f0ca0b49bc687f4140416f7c9269424d9a608b3b47cd1a7e2be635ffdb70d2a  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
 fi
 
 apt-get update
@@ -50,10 +50,7 @@ apt-get update
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-# python3-gi: nfc-watch.py drives neard over D-Bus via Gio; without
-# it the watcher dies at import ('No module named gi') and NFC is
-# dead on a fresh flash (found live on run #8: restart loop).
-apt-get install -y bluez gpiod wpasupplicant dhcpcd-base python3-gi
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -111,8 +108,15 @@ cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/
 #   forces a QCA re-setup that wedged the controller on run #7,
 #   and the chip's NVM default address (00:00:00:00:5A:AD) is
 #   stable anyway, so the fixed address bought nothing.
+# - nfc-watch.service (+ nfc-watch.py): the neard + python watcher
+#   pair is replaced by nfctool's own watch mode (nfctool-watch
+#   below) - the D-Bus handover between neard and the reader
+#   proved brittle (neard loses the adapter after a peer power
+#   cycle), and the watcher's Gio dependency (python3-gi) left
+#   the package set with it. Files stay in the overlay, dormant;
+#   reviving them needs python3-gi reinstalled first.
 systemctl enable charge-limit.timer
-systemctl enable nfc-watch.service
+systemctl enable nfctool-watch.service
 systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
 # bt-provision.service is bt-fixed-mac's replacement (2026-11-06):
@@ -125,6 +129,11 @@ systemctl enable bt-provision.service
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service
+# neard autostart off (see the nfc-watch retirement note above):
+# the pinned neard package stays installed for manual use, but
+# the adapter sits unowned by default - nfctool (watch included)
+# takes it on demand.
+systemctl disable neard.service 2>/dev/null || true
 
 systemctl set-default multi-user.target
 # The desktop is on-demand only (user ruling 2026-11-06): lightdm is

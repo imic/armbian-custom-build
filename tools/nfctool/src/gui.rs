@@ -319,6 +319,22 @@ impl App {
                 let mut fr: &std::fs::File = f;
                 let _ = fr.write_all(now_secs().to_string().as_bytes());
             }
+            // The adapter has a single owner, so a read must first
+            // displace neard + nfc-watch — but restart afterwards
+            // only what was actually running. Since 2026-11-06 both
+            // are retired by default (the adapter sits unowned and
+            // reads take it directly); resurrecting them here would
+            // silently undo that retirement on every read.
+            let was_active: Vec<&str> = ["neard", "nfc-watch"]
+                .into_iter()
+                .filter(|u| {
+                    std::process::Command::new("systemctl")
+                        .args(["is-active", "--quiet", u])
+                        .status()
+                        .map(|s| s.success())
+                        .unwrap_or(false)
+                })
+                .collect();
             let _ = std::process::Command::new("sudo")
                 .args(["systemctl", "stop", "neard", "nfc-watch"])
                 .status();
@@ -331,9 +347,11 @@ impl App {
             let exe = std::env::current_exe()
                 .unwrap_or_else(|_| std::path::PathBuf::from("nfctool"));
             let out = run_helper(&exe, &cancel);
-            let _ = std::process::Command::new("sudo")
-                .args(["systemctl", "start", "neard", "nfc-watch"])
-                .status();
+            if !was_active.is_empty() {
+                let mut args: Vec<&str> = vec!["systemctl", "start"];
+                args.extend(was_active.iter().copied());
+                let _ = std::process::Command::new("sudo").args(&args).status();
+            }
             let _ = std::fs::remove_file("/tmp/nfctool-read.lock");
             let _ = tx.send(out);
         });

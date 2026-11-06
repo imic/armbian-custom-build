@@ -57,6 +57,7 @@ extern "C" {
     fn poll(fds: *mut PollFd, nfds: u64, timeout: i32) -> i32;
     fn close(fd: i32) -> i32;
     fn usleep(us: u32) -> i32;
+    fn signal(signum: i32, handler: usize) -> usize;
 }
 
 fn last_err() -> String {
@@ -623,10 +624,262 @@ pub fn asciis(p: &[u8]) -> String {
         .collect()
 }
 
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn now_iso() -> String {
+    // GNU date renders the local ISO timestamp, matching the
+    // events.jsonl convention the python watcher used.
+    match std::process::Command::new("date")
+        .arg("+%Y-%m-%dT%H:%M:%S%:z")
+        .output()
+    {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+        Err(_) => "unknown".to_string(),
+    }
+}
+
+/// The read lock is the coordination point between the resident
+/// watch and card reads: whoever reads (the GUI around its helper
+/// call, or dump/dump-json directly) holds /tmp/nfctool-read.lock
+/// for the duration, and watch stays off the adapter while a fresh
+/// lock exists. The lock carries the reader's start time so one
+/// orphaned by a crash goes stale (reads are bounded well under
+/// this; the GUI's helper timeout is 60 s).
+const READ_LOCK: &str = "/tmp/nfctool-read.lock";
+const READ_LOCK_STALE_SECS: u64 = 120;
+
+fn take_read_lock() {
+    use std::io::Write as _;
+    if let Ok(mut f) = std::fs::File::create(READ_LOCK) {
+        let _ = f.write_all(now_secs().to_string().as_bytes());
+    }
+}
+
+fn drop_read_lock() {
+    let _ = std::fs::remove_file(READ_LOCK);
+}
+
+/// RAII form of the read lock: the file is removed on drop, so a
+/// reader that panics mid-read (the engine's bring-up panics when
+/// the device state fights it) cannot leave a lock behind for
+/// the watch to mute itself against.
+struct ReadLockGuard;
+
+impl ReadLockGuard {
+    fn new() -> ReadLockGuard {
+        take_read_lock();
+        ReadLockGuard
+    }
+}
+
+impl Drop for ReadLockGuard {
+    fn drop(&mut self) {
+        drop_read_lock();
+    }
+}
+
+/// After taking the read lock, give a running watch one full
+/// burst cycle to notice the lock, release the device and go
+/// quiet. Without this drain, a burst that started just before
+/// the lock was taken can still be in flight — and its closing
+/// STOP_POLL / the yield's DEV_DOWN then lands inside this
+/// reader's bring-up and session, which the reader experiences
+/// as a card that is present (the watch just found it) yet
+/// impossible to read (seen live 2026-11-06: rc=3 with the card
+/// on the phone the whole time).
+fn drain_watch_burst() {
+    std::thread::sleep(std::time::Duration::from_millis(1800));
+}
+
+fn read_lock_active() -> bool {
+    match std::fs::read_to_string(READ_LOCK) {
+        Ok(s) => {
+            let started = s.trim().parse::<u64>().unwrap_or(0);
+            now_secs().saturating_sub(started) < READ_LOCK_STALE_SECS
+        }
+        Err(_) => false,
+    }
+}
+
+static WATCH_STOP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+extern "C" fn watch_sig(_signum: i32) {
+    WATCH_STOP.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn watch_emit(obj: &serde_json::Value) {
+    use std::io::Write as _;
+    let line = obj.to_string();
+    println!("{}", line);
+    let _ = std::io::stdout().flush();
+    // Best effort: keep appending to the same events file the
+    // python watcher maintained, so the log history stays in
+    // one place.
+    let dir = "/home/user/nfc-log";
+    if std::fs::create_dir_all(dir).is_ok() {
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(format!("{}/events.jsonl", dir))
+        {
+            let _ = writeln!(f, "{}", line);
+        }
+    }
+}
+
+/// Resident card-presence monitor (2026-11-06; replaces the
+/// neard + python watcher pair, whose D-Bus handover proved too
+/// brittle). Burst-polls the adapter on this binary's own genl
+/// channel and logs one JSONL event per presentation: found
+/// (UID / ATQA / SAK from the discovery attributes — no session,
+/// no AUTH, so none of the session-poisoning failure modes) and
+/// lost (after two consecutive empty bursts, to debounce field
+/// edge flicker). Between bursts the poll is stopped, and while
+/// a read lock exists the watch stays off the adapter entirely,
+/// so deep reads never contend with it.
+fn cmd_watch() {
+    unsafe {
+        signal(2, watch_sig as usize);
+        signal(15, watch_sig as usize);
+    }
+    let fd = unsafe { socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC) };
+    if fd < 0 {
+        panic!("netlink socket: {}", last_err());
+    }
+    let fam = resolve_family(fd);
+    let nl = Nl { fd, fam };
+    let idx = get_device_idx(&nl);
+    let _ = nl.cmd_simple(NFC_CMD_DEV_DOWN, idx);
+    let mut up = false;
+    for _ in 0..6 {
+        if nl.cmd_simple(NFC_CMD_DEV_UP, idx) == 0 {
+            up = true;
+            break;
+        }
+        let _ = nl.cmd_simple(NFC_CMD_DEV_DOWN, idx);
+        unsafe { usleep(700000) };
+    }
+    if !up {
+        panic!("DEV_UP never succeeded");
+    }
+    watch_emit(&serde_json::json!({
+        "event": "watcher_start", "status": "ok", "ts": now_iso(),
+    }));
+    let mut present: Option<Target> = None;
+    let mut misses = 0u32;
+    let mut up = true;
+    while !WATCH_STOP.load(std::sync::atomic::Ordering::SeqCst) {
+        if read_lock_active() {
+            // A read owns the adapter: release it COMPLETELY
+            // (stop the poll and power the device down), not
+            // just politely — the reader's bring-up cannot seize
+            // a device that is merely up-but-idle (its DEV_DOWN
+            // is refused while a poll is active and its DEV_UP
+            // then fails EBUSY; seen live 2026-11-06 as a
+            // 'DEV_UP never succeeded' panic). Also drop
+            // presence state silently — the field picture may
+            // change completely under the reader, so no lost
+            // event is owed.
+            if up {
+                let _ = nl.cmd_simple(NFC_CMD_STOP_POLL, idx);
+                let _ = nl.cmd_simple(NFC_CMD_DEV_DOWN, idx);
+                up = false;
+            }
+            present = None;
+            misses = 0;
+            unsafe { usleep(300000) };
+            continue;
+        }
+        if !up {
+            // Re-acquire after a yield, or after a finished
+            // read powered the device down on its way out.
+            let _ = nl.cmd_simple(NFC_CMD_DEV_DOWN, idx);
+            if nl.cmd_simple(NFC_CMD_DEV_UP, idx) == 0 {
+                up = true;
+            } else {
+                unsafe { usleep(500000) };
+                continue;
+            }
+        }
+        // One discovery burst: start the poll, give targets a
+        // moment to answer, snapshot the target list, stop.
+        let mut b = msg_begin(nl.fam, NFC_CMD_START_POLL, NLM_F_ACK, 5);
+        put_attr(&mut b, A_DEVICE_INDEX, &idx.to_ne_bytes());
+        put_attr(&mut b, A_PROTOCOLS, &POLL_MASK.to_ne_bytes());
+        finish_and_send(nl.fd, &mut b);
+        if nl.wait_ack() != 0 {
+            // Poll refused — the device state moved under us.
+            // Mark it down; the next cycle re-acquires cleanly.
+            up = false;
+            unsafe { usleep(400000) };
+            continue;
+        }
+        unsafe { usleep(700000) };
+        let tg = get_target(&nl, idx);
+        let _ = nl.cmd_simple(NFC_CMD_STOP_POLL, idx);
+        match (tg, &present) {
+            (Some(t), None) => {
+                watch_emit(&serde_json::json!({
+                    "event": "found",
+                    "ts": now_iso(),
+                    "uid": hexs(&t.nfcid1).replace(' ', ""),
+                    "atqa": t.sens_res,
+                    "sak": t.sel_res,
+                }));
+                present = Some(t);
+                misses = 0;
+            }
+            (Some(t), Some(p)) => {
+                if t.nfcid1 != p.nfcid1 {
+                    // A different card swapped in without a gap.
+                    watch_emit(&serde_json::json!({
+                        "event": "lost", "ts": now_iso(),
+                        "uid": hexs(&p.nfcid1).replace(' ', ""),
+                    }));
+                    watch_emit(&serde_json::json!({
+                        "event": "found",
+                        "ts": now_iso(),
+                        "uid": hexs(&t.nfcid1).replace(' ', ""),
+                        "atqa": t.sens_res,
+                        "sak": t.sel_res,
+                    }));
+                    present = Some(t);
+                }
+                misses = 0;
+            }
+            (None, Some(p)) => {
+                misses += 1;
+                if misses >= 2 {
+                    watch_emit(&serde_json::json!({
+                        "event": "lost", "ts": now_iso(),
+                        "uid": hexs(&p.nfcid1).replace(' ', ""),
+                    }));
+                    present = None;
+                    misses = 0;
+                }
+            }
+            (None, None) => {}
+        }
+        unsafe { usleep(600000) };
+    }
+    let _ = nl.cmd_simple(NFC_CMD_STOP_POLL, idx);
+    let _ = nl.cmd_simple(NFC_CMD_DEV_DOWN, idx);
+    watch_emit(&serde_json::json!({
+        "event": "watcher_stop", "status": "ok", "ts": now_iso(),
+    }));
+}
+
 /// Machine-readable dump for the GUI's privileged helper path: the GUI
 /// runs unprivileged (DEV_UP is GENL admin-only and fails EPERM), so it
 /// shells out to `sudo nfctool dump-json` and parses this JSON.
 fn cmd_dump_json() {
+    let _lock = ReadLockGuard::new();
+    drain_watch_burst();
     let mut dev = Device::open();
     let dump = read_full_card(&mut dev);
     dev.down();
@@ -637,6 +890,8 @@ fn cmd_dump_json() {
 }
 
 fn cmd_dump() {
+    let _lock = ReadLockGuard::new();
+    drain_watch_burst();
     let mut dev = Device::open();
     let dump = read_full_card(&mut dev);
     dev.down();
@@ -675,9 +930,10 @@ fn main() {
     match args.get(1).map(|s| s.as_str()) {
         Some("dump") => cmd_dump(),
         Some("dump-json") => cmd_dump_json(),
+        Some("watch") => cmd_watch(),
         Some("gui") => gui::run_gui(),
         _ => {
-            eprintln!("usage: nfctool <dump|dump-json|gui>  (dump needs root: DEV_UP is admin-only)");
+            eprintln!("usage: nfctool <dump|dump-json|watch|gui>  (dump and watch need root: DEV_UP is admin-only)");
             std::process::exit(2);
         }
     }
