@@ -145,9 +145,18 @@ Some_Random_Username 发布，按区域分（均为 Android 11 底包）：
 - 各区域下载汇总：https://droidwin.com/download-msm-download-tool-unbrick-any-oneplus-device/
 - 图文教程：https://www.thecustomdroid.com/oneplus-8t-unbrick-guide/
 
-用法要点：启动工具并选对应区域 → 手机关机，同时按住音量+和音量-
-不放、插上 USB（设备管理器应显示 Qualcomm HS-USB QDLoader 9008）→
-点 Start，约几分钟完成。
+用法要点：**MSM 工具必须在断网状态下启动**（联网启动会校验失败）。
+启动工具并选对应区域 → 让手机进入 9008（EDL）模式 → 点 Start，
+约几分钟完成。进入 9008 的方式按手机当前状态选：
+
+- **系统正常**：临时启动 TWRP（`fastboot boot twrp.img`），由 TWRP
+  重启进入 EDL 模式。
+- **关机状态**：同时按住音量+和音量-不放、插上 USB。
+- **已卡在 900E**（USB 识别为 900E 诊断口）：按住电源和音量+，
+  等串口（设备管理器里的 900E 设备）消失后**立即**改按音量-，
+  抢在重新启动前进入 EDL。
+
+成功进入时设备管理器应显示 Qualcomm HS-USB QDLoader 9008。
 
 注意：
 
