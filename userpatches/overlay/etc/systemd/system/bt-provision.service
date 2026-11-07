@@ -6,6 +6,9 @@ Wants=bluetooth.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/bin/bt-provision.sh
+# Hard backstop: provisioning must never stall the boot, even if
+# a btmgmt call wedges against a half-up controller.
+TimeoutStartSec=45
 
 [Install]
 WantedBy=multi-user.target
