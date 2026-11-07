@@ -1,14 +1,6 @@
 name: Build kebab image
 
-# Manual builds only. Run from the Actions tab ("Run workflow"),
-# always dispatching from main: one dispatch builds main, test and
-# test1 in parallel (matrix below), each publishing to its own
-# Release tag so the three never overwrite each other:
-#   main  -> tag = framework version (e.g. 26.11.1), regular release
-#   test  -> tag = 26.11.1-test,  pre-release
-#   test1 -> tag = 26.11.1-test1, pre-release
-# When the framework version moves (e.g. to 26.11.2), bump the two
-# suffixed tags in the matrix include list to match.
+# Manual builds only. Run from the Actions tab ("Run workflow").
 # NOTE: on a fork, GitHub Actions must be enabled once by the repo
 # owner in the Actions tab before this workflow can run.
 
@@ -47,29 +39,9 @@ permissions:
 
 jobs:
   build:
-    name: build (${{ matrix.branch }})
     runs-on: ubuntu-latest
-    strategy:
-      # One leg failing must not cancel the other two.
-      fail-fast: false
-      matrix:
-        include:
-          - branch: main
-            release_tag: ""
-            prerelease: "false"
-          - branch: test
-            release_tag: "26.11.1-test"
-            prerelease: "true"
-          - branch: test1
-            release_tag: "26.11.1-test1"
-            prerelease: "true"
     steps:
-      # Check out THIS leg's branch: its userpatches are what gets
-      # built. (The workflow definition itself always comes from
-      # the branch the dispatch was started from - main.)
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ matrix.branch }}
       - name: Select minimal variant (no desktop)
         if: inputs.desktop == 'no'
         run: |
@@ -106,10 +78,3 @@ jobs:
           # The composite's own clean step is the fragile apt purge
           # described above; ours already ran, so skip it.
           armbian_runner_clean: ""
-          # Per-leg release routing. Empty tag = the composite's
-          # default (the framework version, today's behaviour for
-          # main); the test legs publish to their own pre-release
-          # tags instead of overwriting the main release.
-          armbian_release_tag: ${{ matrix.release_tag }}
-          armbian_release_prerelease: ${{ matrix.prerelease }}
-          armbian_release_title: "Armbian image (${{ matrix.branch }})"
