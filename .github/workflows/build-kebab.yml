@@ -78,3 +78,12 @@ jobs:
           # The composite's own clean step is the fragile apt purge
           # described above; ours already ran, so skip it.
           armbian_runner_clean: ""
+          # This branch publishes to its own pre-release tag so
+          # builds from different branches never overwrite each
+          # other on the shared 26.11.1 release. (The composite
+          # always builds the branch the workflow is dispatched
+          # from, so the tag must live in this branch's own copy
+          # of the workflow.)
+          armbian_release_tag: "26.11.1-test"
+          armbian_release_prerelease: "true"
+          armbian_release_title: "Armbian image (test)"
