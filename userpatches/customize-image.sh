@@ -91,13 +91,22 @@ chmod +x /usr/local/bin/* 2>/dev/null || true
 # while the blobs ship in the BSP package under qcom/ paths. The
 # copies on the reference device were hash-verified identical to
 # these package files; materialize them here so ADSP/CDSP/Venus
-# load on a fresh image. (SLPI stays unloaded, as on the reference
-# device; the GPU zap firmware is referenced by its qcom/ path
-# directly and needs no copy.)
+# load on a fresh image. (The GPU zap firmware is referenced by
+# its qcom/ path directly and needs no copy.)
 install -d /lib/firmware/postmarketos
 cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
+# SLPI's blob is not in the BSP tier at all. It comes from the
+# postmarketOS firmware-oneplus-kebab package, stored in the
+# overlay as base64 of the xz-compressed blob (same text-only
+# channel constraint as nfctool) and hash-verified here - a
+# mismatch fails the build.
+if [ -f /lib/firmware/postmarketos/slpi.mbn.xz.b64 ]; then
+	base64 -d /lib/firmware/postmarketos/slpi.mbn.xz.b64 | xz -d > /lib/firmware/postmarketos/slpi.mbn
+	rm -f /lib/firmware/postmarketos/slpi.mbn.xz.b64
+	echo "4b2b41cd258284226fbb026a3e7d2a2c120b3033d5cd436da6a2e765b383bd46  /lib/firmware/postmarketos/slpi.mbn" | sha256sum -c - > /dev/null || { echo "customize: slpi.mbn sha256 mismatch after decode" >&2; exit 1; }
+fi
 
 # Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
 # - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
