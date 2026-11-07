@@ -15,30 +15,49 @@
 # no stored state.
 set -e
 
-# Wait for the controller to show up as unconfigured (or bail out
-# quietly if it is already configured).
-found=0
+# Wait for the controller WITHOUT mgmt calls. The hci device shows
+# up in sysfs the moment the controller registers, so poll that -
+# it costs nothing. The previous shape ran two btmgmt calls per
+# iteration; each call takes a second or more while the stack is
+# unsettled, and on a cold boot the polling plus the final write
+# overran the unit's 45 s start budget: the address WAS provisioned
+# but systemd killed the unit at the cap and marked it failed
+# (first boot of the 10d812bf build, 2026-11-07).
 i=0
-while [ $i -lt 30 ]; do
-	if btmgmt info 2>/dev/null | grep -q "Primary controller"; then
-		exit 0
-	fi
-	if btmgmt extinfo 2>/dev/null | grep -q "Unconfigured controller"; then
-		found=1
-		break
-	fi
+while [ $i -lt 60 ]; do
+	[ -e /sys/class/bluetooth/hci0 ] && break
 	i=$((i + 1))
-	sleep 1
+	sleep 0.5
 done
 
 # Controller never appeared: nothing to provision. Do NOT fall
 # through to the public-addr call here - with no controller at
 # index 0 btmgmt blocks indefinitely and stalls the whole boot
 # (hit on the first boot of the 1e538414 build, 2026-11-06).
+[ -e /sys/class/bluetooth/hci0 ] || exit 0
+
+# Registered. Already configured means nothing to do; spend mgmt
+# calls only from here on, and only a bounded number.
+if btmgmt info 2>/dev/null | grep -q "Primary controller"; then
+	exit 0
+fi
+found=0
+i=0
+while [ $i -lt 10 ]; do
+	if btmgmt extinfo 2>/dev/null | grep -q "Unconfigured controller"; then
+		found=1
+		break
+	fi
+	if btmgmt info 2>/dev/null | grep -q "Primary controller"; then
+		exit 0
+	fi
+	i=$((i + 1))
+	sleep 1
+done
 if [ "$found" -eq 0 ]; then
 	exit 0
 fi
 
 mac="$( (cat /etc/machine-id; echo bluetooth) | sha256sum )"
 addr="42:$(echo "$mac" | cut -c1-2):$(echo "$mac" | cut -c5-6):$(echo "$mac" | cut -c9-10):$(echo "$mac" | cut -c13-14):$(echo "$mac" | cut -c17-18)"
-exec btmgmt --index 0 public-addr "$addr"
+exec timeout 15 btmgmt --index 0 public-addr "$addr"

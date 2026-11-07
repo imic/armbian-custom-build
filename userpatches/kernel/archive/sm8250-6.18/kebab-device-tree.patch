@@ -37,6 +37,10 @@ remaining. The BT-enable pwrseq delta was
 compiled and DTB-diffed on 2026-11-06 (delta limited to the hog
 gpios/line-name and the PMU bt-enable-gpios/pinctrl).
 
+Firmware-name properties for the DSP/video remoteprocs now point
+at the BSP blob locations under qcom/sm8250/OnePlus/ instead of
+the postmarketos/ copies (test1 branch, 2026-11-07).
+
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 @@ -192,21 +192,56 @@
@@ -103,7 +107,19 @@ gpios/line-name and the PMU bt-enable-gpios/pinctrl).
  	};
  
  	battery: battery {
-@@ -522,7 +557,7 @@
+@@ -512,17 +547,17 @@
+ };
+ 
+ &adsp {
+-	firmware-name = "postmarketos/adsp.mbn";
++	firmware-name = "qcom/sm8250/OnePlus/adsp.mbn";
+ 	status = "okay";
+ };
+ 
+ &cdsp {
+-	firmware-name = "postmarketos/cdsp.mbn";
++	firmware-name = "qcom/sm8250/OnePlus/cdsp.mbn";
+ 	status = "okay";
  };
  
  &dispcc {
@@ -134,6 +150,15 @@ gpios/line-name and the PMU bt-enable-gpios/pinctrl).
 +        enable-gpios = <&tlmm 83 GPIO_ACTIVE_HIGH>;
 +        firmware-gpios = <&tlmm 110 GPIO_ACTIVE_HIGH>;
      };
+ };
+ 
+@@ -610,7 +649,7 @@
+ };
+ 
+ &slpi {
+-	firmware-name = "postmarketos/slpi.mbn";
++	firmware-name = "qcom/sm8250/OnePlus/kebab/slpi.mbn";
+ 	status = "okay";
  };
  
 @@ -622,7 +661,6 @@
@@ -246,10 +271,14 @@ gpios/line-name and the PMU bt-enable-gpios/pinctrl).
  };
  
  &usb_1_hsphy {
-@@ -830,3 +919,91 @@
- 	firmware-name = "postmarketos/venus.mbn";
- 	status = "okay";
+@@ -827,6 +916,94 @@
  };
+ 
+ &venus {
+-	firmware-name = "postmarketos/venus.mbn";
++	firmware-name = "qcom/sm8250/OnePlus/kebab/venus.mbn";
++	status = "okay";
++};
 +
 +&mdss_dsi0 {
 +	vdda-supply = <&vreg_l9a_1p2>;
@@ -336,5 +365,5 @@ gpios/line-name and the PMU bt-enable-gpios/pinctrl).
 +&pm8150b_haptics {
 +	qcom,boost-gpios = <&pm8150b_gpios 5 GPIO_ACTIVE_HIGH>;
 +	qcom,wave-play-rate-us = <6667>;
-+	status = "okay";
-+};
+ 	status = "okay";
+ };

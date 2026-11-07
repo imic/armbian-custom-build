@@ -87,17 +87,20 @@ fi
 # restore it for the programs the overlay ships.
 chmod +x /usr/local/bin/* 2>/dev/null || true
 
-# The device tree requests DSP firmware under postmarketos/ names,
-# while the blobs ship in the BSP package under qcom/ paths. The
-# copies on the reference device were hash-verified identical to
-# these package files; materialize them here so ADSP/CDSP/Venus
-# load on a fresh image. (SLPI stays unloaded, as on the reference
-# device; the GPU zap firmware is referenced by its qcom/ path
-# directly and needs no copy.)
-install -d /lib/firmware/postmarketos
-cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mbn
-cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
-cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
+# The device tree's firmware-name properties point directly at
+# the BSP blob locations under qcom/sm8250/OnePlus/ (kebab DT
+# patch, test1 arrangement), so ADSP/CDSP/Venus load in place -
+# no postmarketos/ copies. SLPI's blob is not in the BSP tier at
+# all; it comes from the postmarketOS firmware-oneplus-kebab
+# package, stored in the overlay as base64 of the xz-compressed
+# blob (same text-only channel constraint as nfctool) at exactly
+# the path the device tree asks for, and hash-verified here - a
+# missing file or a mismatch fails the build.
+SLPI_B64=/lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn.xz.b64
+[ -f "$SLPI_B64" ] || { echo "customize: slpi.mbn.xz.b64 missing from overlay" >&2; exit 1; }
+base64 -d "$SLPI_B64" | xz -d > /lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn
+rm -f "$SLPI_B64"
+echo "4b2b41cd258284226fbb026a3e7d2a2c120b3033d5cd436da6a2e765b383bd46  /lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn" | sha256sum -c - > /dev/null || { echo "customize: slpi.mbn sha256 mismatch after decode" >&2; exit 1; }
 
 # Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
 # - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
@@ -176,8 +179,7 @@ grep -q '^abl_boot_partition_label=boot_a$' /boot/armbianEnv.txt || { echo "cust
 # can only ever request ~105 MB of it, measured on the reference
 # device: the qcom/sm8250 tree (OnePlus files only), the ath11k
 # QCA6390 target, the qca Bluetooth firmware, the loose top-level
-# QCA files, regulatory.db and the postmarketos/ DSP copies made
-# above. Delete everything else.
+# QCA files and regulatory.db. Delete everything else.
 FW=/lib/firmware
 [ -d "$FW/qcom/sm8250" ] && [ -d "$FW/ath11k" ] || {
 	echo "customize: unexpected firmware layout, refusing to prune" >&2
