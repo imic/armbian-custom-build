@@ -25,7 +25,7 @@ if [ -f /usr/local/bin/nfctool.b64 ]; then
 	base64 -d /usr/local/bin/nfctool.b64 > /usr/local/bin/nfctool
 	rm -f /usr/local/bin/nfctool.b64
 	chmod +x /usr/local/bin/nfctool
-	echo "4f0ca0b49bc687f4140416f7c9269424d9a608b3b47cd1a7e2be635ffdb70d2a  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
+	echo "42e7827a5b1a370419242a7cc0512bf71d97a71e2034f28901721966a66b45a0  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
 fi
 
 apt-get update

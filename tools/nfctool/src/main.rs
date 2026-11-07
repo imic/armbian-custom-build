@@ -717,15 +717,23 @@ fn watch_emit(obj: &serde_json::Value) {
     let line = obj.to_string();
     println!("{}", line);
     let _ = std::io::stdout().flush();
-    // Best effort: keep appending to the same events file the
-    // python watcher maintained, so the log history stays in
-    // one place.
-    let dir = "/home/user/nfc-log";
-    if std::fs::create_dir_all(dir).is_ok() {
+    // Best effort: also append to the events file in the
+    // INVOKING user's home (~/nfc-log/events.jsonl, the location
+    // the python watcher established). The home comes from $HOME,
+    // never a hardcoded account: a root-run watcher must not
+    // conjure another user's home directory into existence
+    // (on first boot the service runs before the account exists,
+    // and a root-created /home/<user> keeps the account's home
+    // root-owned - hit 2026-11-07). No $HOME: stdout/journal only.
+    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(home).join("nfc-log");
+    if std::fs::create_dir_all(&dir).is_ok() {
         if let Ok(mut f) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
-            .open(format!("{}/events.jsonl", dir))
+            .open(dir.join("events.jsonl"))
         {
             let _ = writeln!(f, "{}", line);
         }
