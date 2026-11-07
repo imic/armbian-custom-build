@@ -50,7 +50,7 @@ apt-get update
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base xz-utils
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
