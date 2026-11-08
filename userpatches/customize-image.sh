@@ -50,7 +50,7 @@ apt-get update
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-apt-get install -y bluez gpiod wpasupplicant dhcpcd-base xz-utils
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -90,17 +90,21 @@ chmod +x /usr/local/bin/* 2>/dev/null || true
 # The device tree's firmware-name properties point directly at
 # the BSP blob locations under qcom/sm8250/OnePlus/ (kebab DT
 # patch, test1 arrangement), so ADSP/CDSP/Venus load in place -
-# no postmarketos/ copies. SLPI's blob is not in the BSP tier at
-# all; it comes from the postmarketOS firmware-oneplus-kebab
-# package, stored in the overlay as base64 of the xz-compressed
-# blob (same text-only channel constraint as nfctool) at exactly
-# the path the device tree asks for, and hash-verified here - a
-# missing file or a mismatch fails the build.
-SLPI_B64=/lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn.xz.b64
-[ -f "$SLPI_B64" ] || { echo "customize: slpi.mbn.xz.b64 missing from overlay" >&2; exit 1; }
-base64 -d "$SLPI_B64" | xz -d > /lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn
-rm -f "$SLPI_B64"
-echo "4b2b41cd258284226fbb026a3e7d2a2c120b3033d5cd436da6a2e765b383bd46  /lib/firmware/qcom/sm8250/OnePlus/kebab/slpi.mbn" | sha256sum -c - > /dev/null || { echo "customize: slpi.mbn sha256 mismatch after decode" >&2; exit 1; }
+# no postmarketos/ copies.
+#
+# SLPI is deliberately NOT materialized (disabled 2026-11-08,
+# same ruling as test): the blob boots, but its sensor_process
+# dies on its first QDI invoke - mainline has no host-side QDI
+# service - and the PAS recovery loop then crash-restarts it
+# ~3.6x/s forever, hanging the whole system (measured on-device:
+# crash #714 at t=199 s, SSH/WiFi dying under the restart
+# storm). With no slpi.mbn in the image the driver fails once
+# with ENOENT and stays quiet - the #12 arrangement. The DT's
+# qcom-path firmware-name (this branch's proper form) stays as
+# is, starved; the overlay .b64 was removed with the decode
+# block, and xz-utils (added only for that decode) left the
+# install list with it. Revisit only if mainline grows the QDI
+# host service.
 
 # Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
 # - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
