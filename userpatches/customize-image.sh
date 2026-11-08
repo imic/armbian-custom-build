@@ -50,7 +50,7 @@ apt-get update
 # bluez: without it there is no Bluetooth userspace at all - the
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
-apt-get install -y bluez gpiod wpasupplicant dhcpcd-base xz-utils
+apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -97,16 +97,17 @@ install -d /lib/firmware/postmarketos
 cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
-# SLPI's blob is not in the BSP tier at all. It comes from the
-# postmarketOS firmware-oneplus-kebab package, stored in the
-# overlay as base64 of the xz-compressed blob (same text-only
-# channel constraint as nfctool) and hash-verified here - a
-# mismatch fails the build.
-if [ -f /lib/firmware/postmarketos/slpi.mbn.xz.b64 ]; then
-	base64 -d /lib/firmware/postmarketos/slpi.mbn.xz.b64 | xz -d > /lib/firmware/postmarketos/slpi.mbn
-	rm -f /lib/firmware/postmarketos/slpi.mbn.xz.b64
-	echo "4b2b41cd258284226fbb026a3e7d2a2c120b3033d5cd436da6a2e765b383bd46  /lib/firmware/postmarketos/slpi.mbn" | sha256sum -c - > /dev/null || { echo "customize: slpi.mbn sha256 mismatch after decode" >&2; exit 1; }
-fi
+# SLPI is deliberately NOT materialized (disabled 2026-11-08):
+# the blob boots, but its sensor_process dies on its first QDI
+# invoke - mainline has no host-side QDI service - and the PAS
+# recovery loop then crash-restarts it ~3.6x/s forever, hanging
+# the whole system (measured on-device: crash #714 at t=199 s,
+# SSH/WiFi dying under the restart storm). With no slpi.mbn in
+# the image the driver fails once with ENOENT and stays quiet -
+# the #12 arrangement. The overlay .b64 was removed with the
+# decode block, and xz-utils (added only for that decode) left
+# the install list with it. Revisit only if mainline grows the
+# QDI host service.
 
 # Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
 # - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
