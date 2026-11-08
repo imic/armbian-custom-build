@@ -129,6 +129,18 @@ systemctl enable charge-limit.timer
 systemctl enable nfctool-watch.service
 systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
+# wlan-factory-mac.service: mainline ath11k never reads the
+# persist partition, so the WLAN interface is born with a
+# board-data template address that changes every boot, and the
+# network stack then fights over it (a supplicant/kernel address
+# mismatch wedges association; DHCP churns). The unit reads the
+# unit's own factory address (Intf0MacAddress in
+# qca6390/wlan_mac.bin on persist - what the stock qca driver
+# reads) and sets it before networkd/wpa_supplicant start.
+# Fail-open: a missing or malformed file leaves the address
+# untouched. No per-unit data is baked in - each unit reads its
+# own persist at boot.
+systemctl enable wlan-factory-mac.service
 # bt-provision.service is bt-fixed-mac's replacement (2026-11-06):
 # the QCA controller registers unconfigured and only becomes usable
 # after a public address is set over mgmt; bt-provision does exactly

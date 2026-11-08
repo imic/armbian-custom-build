@@ -1,0 +1,13 @@
+[Unit]
+Description=Set WLAN factory MAC from persist before network stack
+After=sys-subsystem-net-devices-wlp1s0.device sys-subsystem-net-devices-wlan0.device
+Before=systemd-networkd.service wpa_supplicant.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wlan-factory-mac.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
