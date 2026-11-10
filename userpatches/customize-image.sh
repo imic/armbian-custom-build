@@ -16,6 +16,22 @@ if [ -d /tmp/overlay ]; then
 	cp -a /tmp/overlay/. /
 fi
 
+# The overlay arrives with the build runner's uid on every path
+# (the checkout/rsync chain preserves it), and cp -a stamps that
+# ownership onto the existing system directories it merges into -
+# /etc and /usr ended up owned by uid 1001. Stock daemons run with
+# full capabilities and never notice, but timedated's unit caps it
+# to CAP_SYS_TIME (no CAP_DAC_OVERRIDE), so even as root it cannot
+# write /etc/localtime and every real timezone change fails with
+# EACCES (bisected on-device 2026-11-10; the no-op case never
+# reaches the write - timedated returns early when the requested
+# zone already matches). Everything the overlay ships is meant to
+# be root-owned: normalize exactly the paths the overlay contains,
+# nothing else.
+if [ -d /tmp/overlay ]; then
+	(cd /tmp/overlay && find . -exec chown root:root "/{}" +)
+fi
+
 # nfctool (the NFC card tool, source in tools/nfctool/) travels
 # base64-encoded as /usr/local/bin/nfctool.b64: the channel that
 # pushes this repo only carries UTF-8 text, so the musl-static
@@ -175,6 +191,14 @@ systemctl set-default multi-user.target
 # desktop is wanted: systemctl start lightdm. xrdp is unaffected
 # (it spawns its own X per connection).
 systemctl disable lightdm.service 2>/dev/null || true
+
+# The generic image enables serial-getty@ttyS0, but this board has
+# no /dev/ttyS0 at all (no serial console device is created), so
+# every boot waits ~90 s for dev-ttyS0.device to time out before
+# the getty's dependency fails - on first boot it also holds up
+# the firstlogin wizard's "system finished booting" gate. Mask it
+# (observed on-device 2026-11-10).
+systemctl mask serial-getty@ttyS0.service
 
 # --- Slot packaging: this image is built for slot A ---------------------
 # The ABL packaging extension stamps the boot image's slot_suffix from
