@@ -168,12 +168,15 @@ systemctl enable wlan-factory-mac.service
 # after a public address is set over mgmt; bt-provision does exactly
 # that - safe now that the PMU power sequencer owns the BT enable
 # line and the re-setup it triggers can really power-cycle the
-# controller. It is started by bt-provision.timer a few minutes
-# after boot rather than in the boot transaction itself (the
-# script feeds btmgmt a held-open stdin - btmgmt never returns
-# with the /dev/null stdin a service normally gets; see the
-# script header for the 2026-11-10 bisection).
-systemctl enable bt-provision.timer
+# controller. It runs in the boot transaction itself: the script
+# feeds btmgmt a held-open stdin (btmgmt never returns with the
+# /dev/null stdin a service normally gets - the 2026-11-10
+# bisection; see the script header), and with that fixed it
+# provisions seconds after hci0 registers (measured on-device
+# 2026-11-10: started at boot t=7.8s, provisioned by t=11s).
+# The 4-minute bt-provision.timer detour of the same day is
+# retired - the delay only ever guarded against the stdin hang.
+systemctl enable bt-provision.service
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service
