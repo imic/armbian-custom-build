@@ -29,7 +29,7 @@ fi
 # be root-owned: normalize exactly the paths the overlay contains,
 # nothing else.
 if [ -d /tmp/overlay ]; then
-	(cd /tmp/overlay && find . -exec chown root:root "/{}" +)
+	(cd /tmp/overlay && find . -exec chown root:root '/{}' \;)
 fi
 
 # nfctool (the NFC card tool, source in tools/nfctool/) travels
