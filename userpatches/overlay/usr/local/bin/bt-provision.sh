@@ -21,13 +21,16 @@
 # 42:...), kept so odd units still get a stable-per-install
 # address.
 #
-# Delivery: mgmt calls BLOCK for tens of seconds while bluetoothd
-# is still initializing its adapter (measured 2026-11-08: the
-# first btmgmt info of a cold boot did not return inside the old
-# 45 s unit budget; the same call takes ~0.1 s once the stack has
-# settled). Every call is therefore wrapped in timeout 5 and the
-# whole sequence retries patiently inside a 180 s unit budget -
-# a timed-out call just means "stack not ready yet".
+# Delivery: btmgmt never returns when its stdin is /dev/null -
+# the systemd default (bisected 2026-11-10: the identical call
+# takes 0.02 s with an open stdin and the full timeout with
+# /dev/null). Every unit-context failure of this script traced
+# to that, not to a busy mgmt channel: the calls burned their
+# whole timeout, the loop never saw the unconfigured listing,
+# and the write was never reached. All btmgmt calls below
+# therefore read stdin from a fifo this shell holds open on
+# fd 9. The timeout wrappers stay as a backstop, and the
+# sequence retries patiently inside a 180 s unit budget.
 set -u
 log() { echo "bt-provision: $*"; }
 
@@ -72,15 +75,24 @@ done
 # the first boot of the 1e538414 build, 2026-11-06).
 [ -e /sys/class/bluetooth/hci0 ] || { log "no controller, nothing to do"; exit 0; }
 
+# --- stdin that stays open (see header) ------------------------
+STDIN_FIFO=/run/bt-provision-stdin
+rm -f "$STDIN_FIFO"
+if ! mkfifo "$STDIN_FIFO" 2>/dev/null; then
+	log "could not create stdin fifo, nothing to do"
+	exit 0
+fi
+exec 9<>"$STDIN_FIFO"
+
 # --- provision, patiently --------------------------------------
 found=0
 round=0
 while [ $round -lt 40 ]; do
-	if timeout 5 btmgmt info 2>/dev/null | grep -q "Primary controller"; then
+	if timeout 5 btmgmt info <&9 2>/dev/null | grep -q "Primary controller"; then
 		log "controller already configured"
 		exit 0
 	fi
-	if timeout 5 btmgmt extinfo 2>/dev/null | grep -q "Unconfigured controller"; then
+	if timeout 5 btmgmt extinfo <&9 2>/dev/null | grep -q "Unconfigured controller"; then
 		found=1
 		break
 	fi
@@ -90,9 +102,9 @@ done
 if [ "$found" -eq 1 ]; then
 	try=0
 	while [ $try -lt 4 ]; do
-		timeout 15 btmgmt --index 0 public-addr "$addr" 2>/dev/null
+		timeout 15 btmgmt --index 0 public-addr "$addr" <&9 2>/dev/null
 		sleep 3
-		if timeout 5 btmgmt info 2>/dev/null | grep -q "Primary controller"; then
+		if timeout 5 btmgmt info <&9 2>/dev/null | grep -q "Primary controller"; then
 			log "provisioned $addr"
 			exit 0
 		fi

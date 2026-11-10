@@ -136,7 +136,13 @@ systemctl enable volkey-brightness.service
 # mismatch wedges association; DHCP churns). The unit reads the
 # unit's own factory address (Intf0MacAddress in
 # qca6390/wlan_mac.bin on persist - what the stock qca driver
-# reads) and sets it before networkd/wpa_supplicant start.
+# reads) and publishes it as a udev .link file, so the interface
+# is born with it at device creation, before any service starts
+# (an ip link set from a service always loses the race - the
+# interface is already up by then and ath11k refuses). The
+# generated .link also carries the interface name: the first
+# matching .link wins wholesale, so it must restate wlp1s0 or
+# the interface keeps its kernel name and netplan misses it.
 # Fail-open: a missing or malformed file leaves the address
 # untouched. No per-unit data is baked in - each unit reads its
 # own persist at boot.
@@ -144,10 +150,14 @@ systemctl enable wlan-factory-mac.service
 # bt-provision.service is bt-fixed-mac's replacement (2026-11-06):
 # the QCA controller registers unconfigured and only becomes usable
 # after a public address is set over mgmt; bt-provision does exactly
-# that, once, after bluetoothd is up - safe now that the PMU power
-# sequencer owns the BT enable line and the re-setup it triggers can
-# really power-cycle the controller.
-systemctl enable bt-provision.service
+# that - safe now that the PMU power sequencer owns the BT enable
+# line and the re-setup it triggers can really power-cycle the
+# controller. It is started by bt-provision.timer a few minutes
+# after boot rather than in the boot transaction itself (the
+# script feeds btmgmt a held-open stdin - btmgmt never returns
+# with the /dev/null stdin a service normally gets; see the
+# script header for the 2026-11-10 bisection).
+systemctl enable bt-provision.timer
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
 systemctl enable usbgadget-rndis.service
