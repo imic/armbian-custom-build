@@ -1,9 +1,0 @@
-[Unit]
-Description=Provision Bluetooth once the stack has settled
-
-[Timer]
-OnBootSec=4min
-Unit=bt-provision.service
-
-[Install]
-WantedBy=timers.target
