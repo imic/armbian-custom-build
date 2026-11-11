@@ -16,6 +16,22 @@ if [ -d /tmp/overlay ]; then
 	cp -a /tmp/overlay/. /
 fi
 
+# The overlay arrives with the build runner's uid on every path
+# (the checkout/rsync chain preserves it), and cp -a stamps that
+# ownership onto the existing system directories it merges into -
+# /etc and /usr ended up owned by uid 1001. Stock daemons run with
+# full capabilities and never notice, but timedated's unit caps it
+# to CAP_SYS_TIME (no CAP_DAC_OVERRIDE), so even as root it cannot
+# write /etc/localtime and every real timezone change fails with
+# EACCES (bisected on-device 2026-11-10; the no-op case never
+# reaches the write - timedated returns early when the requested
+# zone already matches). Everything the overlay ships is meant to
+# be root-owned: normalize exactly the paths the overlay contains,
+# nothing else.
+if [ -d /tmp/overlay ]; then
+	(cd /tmp/overlay && find . -exec chown root:root '/{}' \;)
+fi
+
 # nfctool (the NFC card tool, source in tools/nfctool/) travels
 # base64-encoded as /usr/local/bin/nfctool.b64: the channel that
 # pushes this repo only carries UTF-8 text, so the musl-static
@@ -91,13 +107,23 @@ chmod +x /usr/local/bin/* 2>/dev/null || true
 # while the blobs ship in the BSP package under qcom/ paths. The
 # copies on the reference device were hash-verified identical to
 # these package files; materialize them here so ADSP/CDSP/Venus
-# load on a fresh image. (SLPI stays unloaded, as on the reference
-# device; the GPU zap firmware is referenced by its qcom/ path
-# directly and needs no copy.)
+# load on a fresh image. (The GPU zap firmware is referenced by
+# its qcom/ path directly and needs no copy.)
 install -d /lib/firmware/postmarketos
 cp /lib/firmware/qcom/sm8250/OnePlus/adsp.mbn /lib/firmware/postmarketos/adsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/cdsp.mbn /lib/firmware/postmarketos/cdsp.mbn
 cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/venus.mbn
+# SLPI is deliberately NOT materialized (disabled 2026-11-08):
+# the blob boots, but its sensor_process dies on its first QDI
+# invoke - mainline has no host-side QDI service - and the PAS
+# recovery loop then crash-restarts it ~3.6x/s forever, hanging
+# the whole system (measured on-device: crash #714 at t=199 s,
+# SSH/WiFi dying under the restart storm). With no slpi.mbn in
+# the image the driver fails once with ENOENT and stays quiet -
+# the #12 arrangement. The overlay .b64 was removed with the
+# decode block, and xz-utils (added only for that decode) left
+# the install list with it. Revisit only if mainline grows the
+# QDI host service.
 
 # Retired 2026-11-06 (units/scripts stay in the overlay, dormant):
 # - wifi-join.service (+ the qca6390-wlan-enable.service it pulled
@@ -119,12 +145,37 @@ systemctl enable charge-limit.timer
 systemctl enable nfctool-watch.service
 systemctl enable panel-blank.service
 systemctl enable volkey-brightness.service
+# wlan-factory-mac.service: mainline ath11k never reads the
+# persist partition, so the WLAN interface is born with a
+# board-data template address that changes every boot, and the
+# network stack then fights over it (a supplicant/kernel address
+# mismatch wedges association; DHCP churns). The unit reads the
+# unit's own factory address (Intf0MacAddress in
+# qca6390/wlan_mac.bin on persist - what the stock qca driver
+# reads) and publishes it as a udev .link file, so the interface
+# is born with it at device creation, before any service starts
+# (an ip link set from a service always loses the race - the
+# interface is already up by then and ath11k refuses). The
+# generated .link also carries the interface name: the first
+# matching .link wins wholesale, so it must restate wlp1s0 or
+# the interface keeps its kernel name and netplan misses it.
+# Fail-open: a missing or malformed file leaves the address
+# untouched. No per-unit data is baked in - each unit reads its
+# own persist at boot.
+systemctl enable wlan-factory-mac.service
 # bt-provision.service is bt-fixed-mac's replacement (2026-11-06):
 # the QCA controller registers unconfigured and only becomes usable
 # after a public address is set over mgmt; bt-provision does exactly
-# that, once, after bluetoothd is up - safe now that the PMU power
-# sequencer owns the BT enable line and the re-setup it triggers can
-# really power-cycle the controller.
+# that - safe now that the PMU power sequencer owns the BT enable
+# line and the re-setup it triggers can really power-cycle the
+# controller. It runs in the boot transaction itself: the script
+# feeds btmgmt a held-open stdin (btmgmt never returns with the
+# /dev/null stdin a service normally gets - the 2026-11-10
+# bisection; see the script header), and with that fixed it
+# provisions seconds after hci0 registers (measured on-device
+# 2026-11-10: started at boot t=7.8s, provisioned by t=11s).
+# The 4-minute bt-provision.timer detour of the same day is
+# retired - the delay only ever guarded against the stdin hang.
 systemctl enable bt-provision.service
 # Same two enables the board hook performs with its package set.
 systemctl enable qbootctl.service
@@ -143,6 +194,14 @@ systemctl set-default multi-user.target
 # desktop is wanted: systemctl start lightdm. xrdp is unaffected
 # (it spawns its own X per connection).
 systemctl disable lightdm.service 2>/dev/null || true
+
+# The generic image enables serial-getty@ttyS0, but this board has
+# no /dev/ttyS0 at all (no serial console device is created), so
+# every boot waits ~90 s for dev-ttyS0.device to time out before
+# the getty's dependency fails - on first boot it also holds up
+# the firstlogin wizard's "system finished booting" gate. Mask it
+# (observed on-device 2026-11-10).
+systemctl mask serial-getty@ttyS0.service
 
 # --- Slot packaging: this image is built for slot A ---------------------
 # The ABL packaging extension stamps the boot image's slot_suffix from

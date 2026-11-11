@@ -10,35 +10,108 @@
 # the controller can really power-cycle (with the old GPIO hog the
 # same re-setup wedged the controller - the run #7 failure).
 #
-# The address is derived from the machine-id (same derivation the
-# retired bt-fixed-mac used), so it is stable per device and needs
-# no stored state.
-set -e
+# Address: the factory WLAN address (Intf0MacAddress in
+# qca6390/wlan_mac.bin on the persist partition) minus one - the
+# usual factory block allocation on these combo chips (on the
+# reference unit the file assigns ...C6 to P2P and ...C8 to STA,
+# leaving ...C7, the slot BT occupies). Persist survives
+# reflashing, so the BT address is stable per unit and pairings
+# survive image changes. Fallback when persist has no usable
+# entry: the previous machine-id derivation (locally administered
+# 42:...), kept so odd units still get a stable-per-install
+# address.
+#
+# Delivery: btmgmt never returns when its stdin is /dev/null -
+# the systemd default (bisected 2026-11-10: the identical call
+# takes 0.02 s with an open stdin and the full timeout with
+# /dev/null). Every unit-context failure of this script traced
+# to that, not to a busy mgmt channel: the calls burned their
+# whole timeout, the loop never saw the unconfigured listing,
+# and the write was never reached. All btmgmt calls below
+# therefore read stdin from a fifo this shell holds open on
+# fd 9. The timeout wrappers stay as a backstop, and the
+# sequence retries patiently inside a 180 s unit budget.
+set -u
+log() { echo "bt-provision: $*"; }
 
-# Wait for the controller to show up as unconfigured (or bail out
-# quietly if it is already configured).
-found=0
+# --- address ---------------------------------------------------
+addr=""
+PART=/dev/disk/by-partlabel/persist
+MP=/run/bt-provision-persist
+hex=""
+if [ -e "$PART" ]; then
+	mkdir -p "$MP"
+	if mount -o ro,noload "$PART" "$MP" 2>/dev/null; then
+		if [ -f "$MP/qca6390/wlan_mac.bin" ]; then
+			hex=$(grep '^Intf0MacAddress=' "$MP/qca6390/wlan_mac.bin" | head -1 | cut -d= -f2 | tr -d ' \r\n')
+		fi
+		umount "$MP" 2>/dev/null
+	fi
+	rmdir "$MP" 2>/dev/null
+fi
+case "$hex" in
+	[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f])
+		num=$(( (0x$hex - 1) & 0xFFFFFFFFFFFF ))
+		addr=$(printf '%012X' "$num" | sed 's/\(..\)\(..\)\(..\)\(..\)\(..\)\(..\)/\1:\2:\3:\4:\5:\6/')
+		log "address from persist: $addr (Intf0 minus 1)"
+		;;
+	*)
+		mac="$( (cat /etc/machine-id; echo bluetooth) | sha256sum )"
+		addr="42:$(echo "$mac" | cut -c1-2):$(echo "$mac" | cut -c5-6):$(echo "$mac" | cut -c9-10):$(echo "$mac" | cut -c13-14):$(echo "$mac" | cut -c17-18)"
+		log "persist unusable, fallback address: $addr"
+		;;
+esac
+
+# --- wait for the controller (sysfs poll, no mgmt cost) --------
 i=0
-while [ $i -lt 30 ]; do
-	if btmgmt info 2>/dev/null | grep -q "Primary controller"; then
+while [ $i -lt 60 ]; do
+	[ -e /sys/class/bluetooth/hci0 ] && break
+	i=$((i + 1))
+	sleep 0.5
+done
+# Controller never appeared: nothing to provision. Do NOT fall
+# through to mgmt calls here - with no controller at index 0
+# btmgmt blocks indefinitely and stalls the whole boot (hit on
+# the first boot of the 1e538414 build, 2026-11-06).
+[ -e /sys/class/bluetooth/hci0 ] || { log "no controller, nothing to do"; exit 0; }
+
+# --- stdin that stays open (see header) ------------------------
+STDIN_FIFO=/run/bt-provision-stdin
+rm -f "$STDIN_FIFO"
+if ! mkfifo "$STDIN_FIFO" 2>/dev/null; then
+	log "could not create stdin fifo, nothing to do"
+	exit 0
+fi
+exec 9<>"$STDIN_FIFO"
+
+# --- provision, patiently --------------------------------------
+found=0
+round=0
+while [ $round -lt 40 ]; do
+	if timeout 5 btmgmt info <&9 2>/dev/null | grep -q "Primary controller"; then
+		log "controller already configured"
 		exit 0
 	fi
-	if btmgmt extinfo 2>/dev/null | grep -q "Unconfigured controller"; then
+	if timeout 5 btmgmt extinfo <&9 2>/dev/null | grep -q "Unconfigured controller"; then
 		found=1
 		break
 	fi
-	i=$((i + 1))
-	sleep 1
+	round=$((round + 1))
+	sleep 2
 done
-
-# Controller never appeared: nothing to provision. Do NOT fall
-# through to the public-addr call here - with no controller at
-# index 0 btmgmt blocks indefinitely and stalls the whole boot
-# (hit on the first boot of the 1e538414 build, 2026-11-06).
-if [ "$found" -eq 0 ]; then
+if [ "$found" -eq 1 ]; then
+	try=0
+	while [ $try -lt 4 ]; do
+		timeout 15 btmgmt --index 0 public-addr "$addr" <&9 2>/dev/null
+		sleep 3
+		if timeout 5 btmgmt info <&9 2>/dev/null | grep -q "Primary controller"; then
+			log "provisioned $addr"
+			exit 0
+		fi
+		try=$((try + 1))
+	done
+	log "write attempted but controller did not graduate"
 	exit 0
 fi
-
-mac="$( (cat /etc/machine-id; echo bluetooth) | sha256sum )"
-addr="42:$(echo "$mac" | cut -c1-2):$(echo "$mac" | cut -c5-6):$(echo "$mac" | cut -c9-10):$(echo "$mac" | cut -c13-14):$(echo "$mac" | cut -c17-18)"
-exec btmgmt --index 0 public-addr "$addr"
+log "controller never appeared in the unconfigured list"
+exit 0
