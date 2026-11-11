@@ -41,6 +41,22 @@
 | 马达（震动） | 未证实 | DT 与寄存器面验证全对、系统可下发播放，但真机无震感；剩余未知在 LRA 端子电气层，待示波器实测 |
 | 蜂窝 / 定位 / 摄像头 / 指纹 | 未验证 | 未做插卡通话与数据、定位、相机、指纹的验证，不在当前镜像的验证范围内 |
 
+## 系统行为说明
+
+### 充电限制（charge-limit）
+
+- 实现：overlay 脚本 `/usr/local/bin/charge-limit.sh`，由 `charge-limit.timer` 每分钟触发一次（oneshot 服务）；读电量计 `bq27541-0/capacity`，写充电 IC `pm8150b-charger` 的 `charging_enabled`。
+- 默认策略：电量 ≥80% 写 0 停充，≤50% 写 1 复充。阈值就写死在脚本末尾两行 `if` 里，没有配置文件。
+- 改法：直接改脚本里的 80 / 50 两个数字即可，下一分钟触发时按新值执行，不用重启任何服务。
+- 局限：这个开关只能拦下一次充电会话、掐不断进行中的会话——插着电时电量可以越过上限一路充到 100%（实测，见已知问题），不要把它当硬顶用。
+
+### 音量键调亮度（volkey-brightness）
+
+- 实现：overlay 脚本 `/usr/local/bin/volkey-brightness.py`（纯 Python 标准库），由 `volkey-brightness.service` 常驻运行。本机是服务器形态、没有桌面音量语义，两个音量键被定义为面板亮度键。
+- 键来源：音量+（键码 115）在 SoC 的 `gpio-keys` 输入设备上，音量−（键码 114）在 PMIC 的 `pm8941_resin` 上——两个键分属两个输入设备；脚本按设备名从 `/proc/bus/input/devices` 现查 event 节点，不写死编号（编号可随开机变化）。
+- 行为：每按一下 ± 最大亮度的 1/10（max_brightness 的 1/10 为一步），下限 20、不会被按键调到全黑；支持长按连发（autorepeat）；写背光节点 `/sys/class/backlight/ae94000.dsi.0/brightness`。
+- 改法：改 .py 里的步长（step）/下限（floor）后 `systemctl restart volkey-brightness.service` 才生效（常驻进程，不像 charge-limit 那样每分钟重读脚本）。
+
 ## 构建
 
 - **GitHub Actions**：先在仓库 Actions 页启用 Actions（fork 默认关闭，仓主点一次），
