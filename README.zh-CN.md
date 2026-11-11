@@ -21,6 +21,26 @@
 | `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；polkitd 刻意不装（与原版镜像一致的包面裁定，2026-11-06；桌面日后装 polkit 代理包时 polkitd 会随其依赖自动回来）；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装，但禁用其自启（NFC 适配器默认无人占用，常驻监控由 nfctool watch 承担，2026-11-06 裁定）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；复制后把 overlay 覆盖到的全部路径属主归正为 root（overlay 经构建链送达时带构建机 uid 1001，`cp -a` 会把 /etc、/usr 等既有目录染成该属主；timedated 的 unit 只有 CAP_SYS_TIME、无 CAP_DAC_OVERRIDE，root 身份也写不进 1001 属主的 /etc，真实时区变更会以 EACCES 失败——2026-11-10 定位并在机验证，归正后 timedatectl 恢复正常；无操作的目标时区不触发写入，曾长期掩盖此问题）；mask 掉 serial-getty@ttyS0（本板无此设备，通用镜像的该服务每次开机白等约 90 秒）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
 | `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡；含 watch 常驻监控模式：以 JSONL 记录刷卡行为，与读卡以 /tmp/nfctool-read.lock 协调让路）；由该源码以 `cargo build --release --target aarch64-unknown-linux-musl` 构建的二进制以 base64 形式存放在 `overlay/usr/local/bin/nfctool.b64`（仓库推送通道只收 UTF-8 文本；customize 在构建时解码、校验 sha256 42e7827a… 后落位 /usr/local/bin/nfctool，校验不过即构建失败），镜像自带、skel 有桌面启动器；卡库数据（~/.nfctool-cards.json）属个人数据，仍按刷后恢复清单处理 |
 
+
+## 硬件支持状态（参考机实测，2026-11）
+
+状态以真机实测为准；没有测过的明说未验证，不按"驱动在树里"推断可用。
+
+| 部件 | 状态 | 说明 |
+|---|---|---|
+| 屏幕 / 触摸 | 已驱动 | 三星 AMB655X 1080×2400 面板点亮、触摸可用、桌面可操作；开机探测期偶发 DSI PLL 锁定失败、无引导画面，后续 modeset 恢复（见已知问题） |
+| GPU | 已驱动 | Adreno 650 渲染正常，devfreq 散热设备已注册（CONFIG_DEVFREQ_THERMAL=y） |
+| WiFi | 已驱动 | QCA6390（ath11k）关联与 DHCP 正常；出厂 MAC 经 udev .link 在设备创建时生效（全新刷机第二启起，见已知问题） |
+| 蓝牙 | 已驱动（音频除外） | 开机约 11 秒完成地址登记后可用，可发现、可配对；蓝牙音频 A2DP 未通——镜像未带音频端点组件，且本机音频通路未启用 |
+| NFC | 已驱动（只读） | SN100T + 自研 nfctool：ISO14443-A 寻卡与 MIFARE Classic 全扇区读取均已实测，watch 模式常驻记录刷卡；工具按设计无任何写卡路径 |
+| 充电 | 已驱动 | SMB5 充电、电量计（bq27541）正常，Type-C PD 协商正常 |
+| 充电限制 | 部分可用 | charge-limit 脚本（≥80% 停充、≤50% 复充）在位运行，但只能拦下一次充电会话、掐不断进行中的会话（见已知问题） |
+| USB | 部分可用 | 设备模式（RNDIS）正常；主机模式数据通路在位，但 VBUS 升压不出电、普通 USB 设备不枚举，需自带供电的 Hub/扩展坞绕行（见已知问题） |
+| 本机音频 | 未通 | ADSP 固件加载报 -22、无声卡注册，扬声器/麦克风不可用；属独立待办，与蓝牙音频是两回事 |
+| 传感器中枢（SLPI） | 不可用 | 固件刻意不出货（主线缺其 QDI 主机服务，出货即崩溃重启风暴，见已知问题）；依赖它的传感器随之不可用 |
+| 马达（震动） | 未证实 | DT 与寄存器面验证全对、系统可下发播放，但真机无震感；剩余未知在 LRA 端子电气层，待示波器实测 |
+| 蜂窝 / 定位 / 摄像头 / 指纹 | 未验证 | 未做插卡通话与数据、定位、相机、指纹的验证，不在当前镜像的验证范围内 |
+
 ## 构建
 
 - **GitHub Actions**：先在仓库 Actions 页启用 Actions（fork 默认关闭，仓主点一次），
