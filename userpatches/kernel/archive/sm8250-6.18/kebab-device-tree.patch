@@ -37,6 +37,10 @@ remaining. The BT-enable pwrseq delta was
 compiled and DTB-diffed on 2026-11-06 (delta limited to the hog
 gpios/line-name and the PMU bt-enable-gpios/pinctrl).
 
+- BQ25980 charge pump: compatible ti,bq25980 -> ti,bq2597x-standalone.
+  The baseline string matches no driver (the in-tree bq2597x charger
+  driver, CONFIG_CHARGER_BQ25970=y, binds only the ti,bq2597x-*
+  compatibles), so the pump stayed unmanaged and uninspectable.
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 @@ -192,21 +192,56 @@
@@ -136,6 +140,15 @@ gpios/line-name and the PMU bt-enable-gpios/pinctrl).
      };
  };
  
+@@ -564,7 +603,7 @@
+     status = "okay";
+ 
+     charger@66 {
+-        compatible = "ti,bq25980";
++        compatible = "ti,bq2597x-standalone";
+         status = "ok";
+         reg = <0x66>;
+         interrupt-parent = <&tlmm>;
 @@ -622,7 +661,6 @@
  	vdda-phy-supply = <&vreg_l5a_0p88>;
  	vdda-pll-supply = <&vreg_l9a_1p2>;
