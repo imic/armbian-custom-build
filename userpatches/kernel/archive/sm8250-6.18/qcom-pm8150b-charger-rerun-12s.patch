@@ -1,0 +1,29 @@
+--- a/drivers/power/supply/qcom_pm8150b_charger.c
++++ b/drivers/power/supply/qcom_pm8150b_charger.c
+@@ -249,6 +249,7 @@
+ #define BITE_WDOG_TIMEOUT_MASK			GENMASK(1, 0)
+ 
+ #define AICL_RERUN_TIME_CFG			0x661
++#define AICL_RERUN_TIME_12S_VAL			0x01
+ #define AICL_RERUN_TIME_MASK			GENMASK(1, 0)
+ 
+ #define SDP_CURRENT_UA			500000
+@@ -702,7 +703,17 @@
+ /* Init sequence derived from vendor downstream driver */
+ static const struct smb5_register smb5_init_seq[] = {
+ 	{ .addr = USBIN_CMD_IL, .mask = USBIN_SUSPEND_BIT, .val = 0 },
+-	{ .addr = AICL_RERUN_TIME_CFG, .mask = AICL_RERUN_TIME_MASK, .val = 0 },
++	/*
++	 * Use the vendor-specified 12 s AICL rerun interval: downstream
++	 * writes AICL_RERUN_TIME_12S_VAL here unconditionally, and
++	 * upstream qcom_smbx does the same for SMB5. The 0 written here
++	 * previously is not the specified interval for this PMIC.
++	 * Together with ADC based AICL disabled (see the AICL options
++	 * entry at the end of this table), this completes the reference
++	 * AICL configuration.
++	 */
++	{ .addr = AICL_RERUN_TIME_CFG, .mask = AICL_RERUN_TIME_MASK,
++	  .val = AICL_RERUN_TIME_12S_VAL },
+ 	/*
+ 	 * By default configure us as an upstream facing port
+ 	 * FIXME: This will be handled by the type-c driver
