@@ -1,0 +1,21 @@
+--- a/drivers/power/supply/qcom_pm8150b_charger.c
++++ b/drivers/power/supply/qcom_pm8150b_charger.c
+@@ -765,8 +765,17 @@
+ 	{ .addr = CMD_ICL_OVERRIDE,
+ 	  .mask = ICL_OVERRIDE_BIT,
+ 	  .val = 0 },
++	/*
++	 * Match downstream smb5_configure_typec(), which also clears
++	 * the AICL step timing and input collapse glitch filter
++	 * selects of this register for non-PMI632 SMB5 PMICs. With
++	 * the POR values (0xA5 on this board) the AICL concludes the
++	 * minimum ICL step on every run here.
++	 */
+ 	{ .addr = USBIN_LOAD_CFG,
+-	  .mask = ICL_OVERRIDE_AFTER_APSD_BIT,
++	  .mask = ICL_OVERRIDE_AFTER_APSD_BIT |
++		  USBIN_AICL_STEP_TIMING_SEL_MASK |
++		  USBIN_IN_COLLAPSE_GF_SEL_MASK,
+ 	  .val = 0 },
+ 	/* Disable watchdog */
+ 	{ .addr = SNARL_BARK_BITE_WD_CFG, .mask = 0xff, .val = 0 },
