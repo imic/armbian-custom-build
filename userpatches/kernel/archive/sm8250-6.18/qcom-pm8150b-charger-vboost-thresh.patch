@@ -1,0 +1,33 @@
+--- a/drivers/power/supply/qcom_pm8150b_charger.c
++++ b/drivers/power/supply/qcom_pm8150b_charger.c
+@@ -172,6 +172,10 @@
+ #define USBIN_AICL_ADC_EN_BIT			BIT(3)
+ #define USBIN_AICL_EN_BIT			BIT(2)
+ 
++#define DCDC_ENG_SDCDC_CFG5			0x1C4
++#define ENG_SDCDC_BAT_HPWR_MASK			GENMASK(7, 6)
++#define BOOST_MODE_THRESH_3P6_V			0xC0
++
+ #define USBIN_5V_AICL_THRESHOLD_CFG		0x381
+ #define USBIN_5V_AICL_THRESHOLD_CFG_MASK	GENMASK(2, 0)
+ 
+@@ -813,6 +817,19 @@
+ 			| USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT,
+ 	  .val = USBIN_AICL_PERIODIC_RERUN_EN_BIT
+ 			| SUSPEND_ON_COLLAPSE_USBIN_BIT },
++	/*
++	 * Match downstream smb5_init_hw(), which sets the SDCDC
++	 * battery high-power (boost mode) threshold to 3.6 V. This
++	 * driver never wrote the register, so the POR value stays
++	 * (3.4 V threshold on this board). With the input limit
++	 * fully open the charger commands a 1 A charge current yet
++	 * the DCDC delivers nothing into the 2S battery sitting
++	 * above the 5 V input, consistent with the boost mode
++	 * never engaging.
++	 */
++	{ .addr = DCDC_ENG_SDCDC_CFG5,
++	  .mask = ENG_SDCDC_BAT_HPWR_MASK,
++	  .val = BOOST_MODE_THRESH_3P6_V },
+ };
+ 
+ static int smb5_init_hw(struct smb5_chip *chip)
