@@ -1,0 +1,27 @@
+--- a/drivers/power/supply/qcom_pm8150b_charger.c
++++ b/drivers/power/supply/qcom_pm8150b_charger.c
+@@ -796,12 +796,23 @@
+ 	 * the effective input current limit at 50 mA regardless of the
+ 	 * APSD-programmed limit. Keep the bit in the mask so it is
+ 	 * actively cleared; AICL keeps working via its analog path.
++	 *
++	 * Also do not enable AICL at all on this board: with the full
++	 * downstream AICL configuration applied (ADC based AICL off,
++	 * periodic rerun at 12 s, USBIN_LOAD_CFG fields cleared), the
++	 * hardware still concludes the minimum 50 mA step on every run
++	 * and every source, with a steady 5.15 V at USBIN. The cause
++	 * is below the configuration layer on this unit, so run with
++	 * the APSD-programmed input limit governing instead. This
++	 * drops the weak-source protection AICL provides; acceptable
++	 * for this device's fixed-charger use, and reverting this one
++	 * value restores stock behaviour.
+ 	 */
+ 	{ .addr = USBIN_AICL_OPTIONS_CFG,
+ 	  .mask = USBIN_AICL_PERIODIC_RERUN_EN_BIT | USBIN_AICL_ADC_EN_BIT
+ 			| USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT,
+ 	  .val = USBIN_AICL_PERIODIC_RERUN_EN_BIT
+-			| USBIN_AICL_EN_BIT | SUSPEND_ON_COLLAPSE_USBIN_BIT },
++			| SUSPEND_ON_COLLAPSE_USBIN_BIT },
+ };
+ 
+ static int smb5_init_hw(struct smb5_chip *chip)
