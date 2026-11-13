@@ -28,7 +28,7 @@
  	POWER_SUPPLY_PROP_CURRENT_NOW,
  	POWER_SUPPLY_PROP_VOLTAGE_NOW,
  	POWER_SUPPLY_PROP_STATUS,
-@@ -466,6 +467,26 @@
+@@ -479,6 +480,26 @@
  		val_raw);
  }
  
@@ -52,10 +52,10 @@
 +				  val ? USBIN_SUSPEND_BIT : 0);
 +}
 +
- static void smb5_status_change_work(struct work_struct *work)
+ static int smb5_set_prop_charging_enabled(struct smb5_chip *chip, unsigned int val)
  {
- 	unsigned int charger_type, current_ua;
-@@ -591,6 +612,8 @@
+ 	return regmap_update_bits(chip->regmap, chip->base + CHARGING_ENABLE_CMD,
+@@ -610,6 +631,8 @@
  		return 0;
  	case POWER_SUPPLY_PROP_CURRENT_MAX:
  		return smb5_get_current_limit(chip, &val->intval);
@@ -64,19 +64,19 @@
  	case POWER_SUPPLY_PROP_CURRENT_NOW:
  		return smb5_get_iio_chan(chip, chip->usb_in_i_chan,
  					 &val->intval);
-@@ -620,6 +643,8 @@
- 	switch (psp) {
- 	case POWER_SUPPLY_PROP_CURRENT_MAX:
+@@ -643,6 +666,8 @@
  		return smb5_set_current_limit(chip, val->intval);
+ 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
+ 		return smb5_set_prop_charging_enabled(chip, val->intval);
 +	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
 +		return smb5_set_prop_input_suspend(chip, val->intval);
  	default:
  		dev_err(chip->dev, "No setter for property: %d\n", psp);
  		return -EINVAL;
-@@ -631,6 +656,7 @@
- {
+@@ -655,6 +680,7 @@
  	switch (psp) {
  	case POWER_SUPPLY_PROP_CURRENT_MAX:
+ 	case POWER_SUPPLY_PROP_CHARGING_ENABLED:
 +	case POWER_SUPPLY_PROP_INPUT_SUSPEND:
  		return 1;
  	default:
