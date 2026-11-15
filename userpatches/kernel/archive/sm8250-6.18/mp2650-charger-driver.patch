@@ -36,10 +36,10 @@ index 3522b77..b947a90 100644
  obj-$(CONFIG_CHARGER_PM8916_LBC)	+= pm8916_lbc.o
 diff --git a/drivers/power/supply/mp2650_charger.c b/drivers/power/supply/mp2650_charger.c
 new file mode 100644
-index 0000000..6663e4d
+index 0000000..7475b81
 --- /dev/null
 +++ b/drivers/power/supply/mp2650_charger.c
-@@ -0,0 +1,381 @@
+@@ -0,0 +1,389 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * MPS MP2650 NVDC charger driver.
@@ -83,8 +83,14 @@ index 0000000..6663e4d
 +#define MP2650_OTG_ILIM_STEP_UA	250000
 +#define MP2650_OTG_ILIM_DEF_UA	1500000
 +
-+/* Measured VBUS ramp on this board: 550 ms to 1.1 s. */
-+#define MP2650_OTG_ENABLE_TIME_US	1200000
++/*
++ * VBUS ramp on this board measures 550 ms to 1.1 s into a light
++ * load. A hub with downstream devices settles slower, and the
++ * Type-C port driver polls the PMIC vSafe5V bit for only 250 ms
++ * after regulator_enable returns. Report 3 s so the rail is up
++ * and settled before that poll starts.
++ */
++#define MP2650_OTG_ENABLE_TIME_US	3000000
 +
 +/* REG13 low nibble: charge state. */
 +#define MP2650_STATE_NONE	0x00
@@ -347,6 +353,8 @@ index 0000000..6663e4d
 +static const struct power_supply_desc mp2650_psy_desc = {
 +	.name = "mp2650-charger",
 +	.type = POWER_SUPPLY_TYPE_USB,
++	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
++			     BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
 +	.properties = mp2650_psy_props,
 +	.num_properties = ARRAY_SIZE(mp2650_psy_props),
 +	.get_property = mp2650_psy_get_property,
