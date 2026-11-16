@@ -44,17 +44,6 @@ if [ -f /usr/local/bin/nfctool.b64 ]; then
 	echo "42e7827a5b1a370419242a7cc0512bf71d97a71e2034f28901721966a66b45a0  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
 fi
 
-# rtl_nic firmware (USB NICs: RTL8153, RTL8156) travels base64-encoded
-# as a tarball at /usr/local/share/rtl-nic-fw.tar.gz.b64. The push
-# channel only carries UTF-8 text. Hash-verified - a mismatch fails
-# the build rather than shipping corrupt firmware.
-if [ -f /usr/local/share/rtl-nic-fw.tar.gz.b64 ]; then
-	base64 -d /usr/local/share/rtl-nic-fw.tar.gz.b64 > /tmp/rtl-nic-fw.tar.gz
-	rm -f /usr/local/share/rtl-nic-fw.tar.gz.b64
-	echo "89464818186d4f8b01439555f99cbc4b985d749b2d30b09ae07b9b8de56f3de6  /tmp/rtl-nic-fw.tar.gz" | sha256sum -c - > /dev/null || { echo "customize: rtl-nic fw sha256 mismatch after decode" >&2; exit 1; }
-	tar -xzf /tmp/rtl-nic-fw.tar.gz -C /
-	rm -f /tmp/rtl-nic-fw.tar.gz
-fi
 
 apt-get update
 # System packages only - the image is always minimal now. The Xfce
@@ -261,6 +250,22 @@ find $FW/qcom -mindepth 1 -maxdepth 1 -type d ! -name sm8250 -exec rm -rf {} +
 find $FW/qcom/sm8250 -mindepth 1 -maxdepth 1 -type d ! -name OnePlus -exec rm -rf {} +
 find $FW/ath11k -mindepth 1 -maxdepth 1 -type d ! -name QCA6390 -exec rm -rf {} +
 find $FW -mindepth 1 -maxdepth 1 -type d \
-	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos \
+	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos ! -name rtl_nic \
 	-exec rm -rf {} +
 echo "customize: firmware after pruning: $(du -sh $FW | cut -f1)"
+
+# rtl_nic firmware (USB NICs: RTL8153, RTL8156) travels base64-encoded
+# as a tarball at /usr/local/share/rtl-nic-fw.tar.gz.b64. The push
+# channel only carries UTF-8 text. Hash-verified - a mismatch fails
+# the build rather than shipping corrupt firmware. This must run
+# AFTER the firmware pruning above: pruning deletes every top-level
+# /lib/firmware directory not on its keep list (rtl_nic is on the
+# list too, as a second line of defence).
+if [ -f /usr/local/share/rtl-nic-fw.tar.gz.b64 ]; then
+	base64 -d /usr/local/share/rtl-nic-fw.tar.gz.b64 > /tmp/rtl-nic-fw.tar.gz
+	rm -f /usr/local/share/rtl-nic-fw.tar.gz.b64
+	echo "89464818186d4f8b01439555f99cbc4b985d749b2d30b09ae07b9b8de56f3de6  /tmp/rtl-nic-fw.tar.gz" | sha256sum -c - > /dev/null || { echo "customize: rtl-nic fw sha256 mismatch after decode" >&2; exit 1; }
+	tar -xzf /tmp/rtl-nic-fw.tar.gz -C /
+	rm -f /tmp/rtl-nic-fw.tar.gz
+	[ "$(ls /lib/firmware/rtl_nic | wc -l)" -eq 40 ] || { echo "customize: rtl_nic firmware incomplete after extract" >&2; exit 1; }
+fi
