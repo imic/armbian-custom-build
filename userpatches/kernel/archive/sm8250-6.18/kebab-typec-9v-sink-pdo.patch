@@ -1,6 +1,6 @@
 --- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
 +++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
-@@ -963,13 +963,13 @@
+@@ -978,13 +978,13 @@
  
  	connector {
  		compatible = "usb-c-connector";
@@ -14,6 +14,6 @@
  		source-pdos = <0x2601912c>;
 -		sink-pdos = <0x2601912c>;
 +		sink-pdos = <0x2601912c 0x2602d0c8>;
+ 		vbus-supply = <&mp2650_otg>;
  
  		ports {
- 			#address-cells = <1>;
