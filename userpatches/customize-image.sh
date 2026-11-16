@@ -267,5 +267,7 @@ if [ -f /usr/local/share/rtl-nic-fw.tar.gz.b64 ]; then
 	echo "89464818186d4f8b01439555f99cbc4b985d749b2d30b09ae07b9b8de56f3de6  /tmp/rtl-nic-fw.tar.gz" | sha256sum -c - > /dev/null || { echo "customize: rtl-nic fw sha256 mismatch after decode" >&2; exit 1; }
 	tar -xzf /tmp/rtl-nic-fw.tar.gz -C /
 	rm -f /tmp/rtl-nic-fw.tar.gz
-	[ "$(ls /lib/firmware/rtl_nic | wc -l)" -eq 40 ] || { echo "customize: rtl_nic firmware incomplete after extract" >&2; exit 1; }
+	for f in rtl8153b-2.fw rtl8156a-2.fw rtl8156b-2.fw; do
+		[ -f "/lib/firmware/rtl_nic/$f" ] || { echo "customize: rtl_nic firmware $f missing after extract" >&2; exit 1; }
+	done
 fi
