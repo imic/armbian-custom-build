@@ -8,20 +8,6 @@
 本系统的全部定制与构建（内核补丁、设备树、镜像定制、本文档）
 由 Muse（muse.ai）构建完成，**请谨慎使用**。
 
-## 我们改了什么（userpatches/）
-
-| 路径 | 内容 |
-|---|---|
-| `kernel/archive/sm8250-6.18/nfc-mifare-tagcmd.patch` | NFC：NCI 核心支持 NXP 私有 TAG-CMD 接口（0x80），使 SN100T 能读 MIFARE Classic 卡；所有路径按控制器/卡类型门控，对其它设备零行为变化 |
-| `kernel/archive/sm8250-6.18/qcom-pon-reset-reason.patch` | PMIC PON：开机时把上一次断电/复位原因打进内核日志（GEN2），用于无日志硬重启的定性 |
-| `kernel/archive/sm8250-6.18/kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点（BT 使能 tlmm21 由 PMU 电源时序器驱动；WiFi 使能 tlmm20 保留 GPIO hog——使能被 hog 常按时控制器无法真正断电重设、任何二次 setup 都会卡死其 UART，run #7 实测）、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、充电器与 VBUS、马达；并删去框架基线给 pcie0_phy 挂的 `power-domains = <&qca639x>`——本构建里无人注册该电源域，PHY 探测会死等它、QCA6390 永不枚举（run #6 实测无 WiFi 的根因） |
-| `kernel/archive/sm8250-6.18/samsung-amb655x-panel.patch` | 面板驱动：主线与框架补丁集都没有 AMB655X（1080x2400 DSC）驱动，缺了它 MSM DRM 无法绑定、实体屏永不亮。此驱动为参考机 TEST 内核所带版本（sm8250-mainline 面板栈），已在本机面板实证；仅一处 API 适配（DSI 核心删掉的 write_long_multi 映射到 write_seq_multi，与现行主线三星 DSC 面板同法） |
-| `config/kernel/linux-sm8250-current.config` | 内核配置：以框架版为底，RFKILL、POWER_RESET_QCOM_PON 改 =y，并内置 NFC 全套 =y（功能随 boot 镜像走，不依赖 rootfs 模块）；另钉 CONFIG_DRM_PANEL_SAMSUNG_AMB655X=y 启用上面的面板驱动；CONFIG_DEVFREQ_THERMAL=y 使 GPU 的 devfreq 散热设备能注册（缺它内核每次开机报 cooling 注册失败，2026-11-07 定位） |
-| `overlay/` | 直接铺进 rootfs 的文件：systemd 服务（限充、nfctool NFC 常驻监控、蓝牙地址登记、WiFi 原厂地址 .link 生成、自动熄屏、音量键调亮度；WiFi 加入、旧蓝牙改址与旧 python NFC watcher 已退役、仅存档不启用）、脚本、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel) |
-| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；polkitd 刻意不装（与原版镜像一致的包面裁定，2026-11-06；桌面日后装 polkit 代理包时 polkitd 会随其依赖自动回来）；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装，但禁用其自启（NFC 适配器默认无人占用，常驻监控由 nfctool watch 承担，2026-11-06 裁定）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；复制后把 overlay 覆盖到的全部路径属主归正为 root（overlay 经构建链送达时带构建机 uid 1001，`cp -a` 会把 /etc、/usr 等既有目录染成该属主；timedated 的 unit 只有 CAP_SYS_TIME、无 CAP_DAC_OVERRIDE，root 身份也写不进 1001 属主的 /etc，真实时区变更会以 EACCES 失败——2026-11-10 定位并在机验证，归正后 timedatectl 恢复正常；无操作的目标时区不触发写入，曾长期掩盖此问题）；mask 掉 serial-getty@ttyS0（本板无此设备，通用镜像的该服务每次开机白等约 90 秒）；并把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；并按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉 |
-| `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡；含 watch 常驻监控模式：以 JSONL 记录刷卡行为，与读卡以 /tmp/nfctool-read.lock 协调让路）；由该源码以 `cargo build --release --target aarch64-unknown-linux-musl` 构建的二进制以 base64 形式存放在 `overlay/usr/local/bin/nfctool.b64`（仓库推送通道只收 UTF-8 文本；customize 在构建时解码、校验 sha256 42e7827a… 后落位 /usr/local/bin/nfctool，校验不过即构建失败），镜像自带、skel 有桌面启动器；卡库数据（~/.nfctool-cards.json）属个人数据，仍按刷后恢复清单处理 |
-
-
 ## 硬件支持状态（参考机实测，2026-11）
 
 状态以真机实测为准；没有测过的明说未验证，不按"驱动在树里"推断可用。
@@ -31,24 +17,93 @@
 | 屏幕 / 触摸 | 已驱动 | 三星 AMB655X 1080×2400 面板点亮、触摸可用、桌面可操作；开机探测期偶发 DSI PLL 锁定失败、无引导画面，后续 modeset 恢复（见已知问题） |
 | GPU | 已驱动 | Adreno 650 渲染正常，devfreq 散热设备已注册（CONFIG_DEVFREQ_THERMAL=y） |
 | WiFi | 已驱动 | QCA6390（ath11k）关联与 DHCP 正常；出厂 MAC 经 udev .link 在设备创建时生效（全新刷机第二启起，见已知问题） |
-| 蓝牙 | 已驱动（音频除外） | 开机约 11 秒完成地址登记后可用，可发现、可配对；蓝牙音频 A2DP 未通——镜像未带音频端点组件，且本机音频通路未启用 |
-| NFC | 已驱动（只读） | SN100T + 自研 nfctool：ISO14443-A 寻卡与 MIFARE Classic 全扇区读取均已实测，watch 模式常驻记录刷卡；工具按设计无任何写卡路径 |
-| 充电 | 已驱动 | SMB5 充电、电量计（bq27541）正常，Type-C PD 协商正常 |
-| 充电限制 | 可用 | MP2650 电压滞回限充：vRest 8.12 V 停、7.85 V 续，内阻自标定（见下节） |
-| USB | 部分可用 | 设备模式（RNDIS）正常；主机模式数据通路在位，但 VBUS 升压不出电、普通 USB 设备不枚举，需自带供电的 Hub/扩展坞绕行（见已知问题） |
+| 蓝牙 | 已驱动（音频除外） | 开机约 11 秒完成地址登记后可用，可发现、可配对；使用方法见下文。蓝牙音频 A2DP 未通——镜像未带音频端点组件，且本机音频通路未启用 |
+| NFC | 已驱动（只读） | SN100T + 自研 nfctool：ISO14443-A 寻卡与 MIFARE Classic 全扇区读取均已实测，watch 模式常驻记录刷卡；工具按设计无任何写卡路径。使用方法见下文 |
+| 充电 | 已驱动 | 真充电芯片是 MPS MP2650（自研驱动，见差异表）：充电、9 V PD 合同下满电流均已实测；PM8150B（SMB5）只做 Type-C 检测与 PD 协商，不送电；电量计 bq27541 读数可信（charge_now 除外，恒为垃圾值） |
+| 充电限制 | 可用 | MP2650 电压滞回限充：静置压 8.12 V 停、7.85 V 续，内阻自标定。改法见下文 |
+| USB | 已驱动 | 设备模式（RNDIS）正常；主机模式 VBUS 由 MP2650 驱动的 regulator 供给，U 盘、Hub、USB 网卡（RTL8153/8156）均实测枚举，SuperSpeed 可达。注意使能时序：先等 Type-C 角色定为 host 再开 VBUS（驱动已按此实现） |
 | 本机音频 | 未通 | ADSP 固件加载报 -22、无声卡注册，扬声器/麦克风不可用；属独立待办，与蓝牙音频是两回事 |
 | 传感器中枢（SLPI） | 不可用 | 固件刻意不出货（主线缺其 QDI 主机服务，出货即崩溃重启风暴，见已知问题）；依赖它的传感器随之不可用 |
 | 马达（震动） | 未证实 | DT 与寄存器面验证全对、系统可下发播放，但真机无震感；剩余未知在 LRA 端子电气层，待示波器实测 |
 | 蜂窝 / 定位 / 摄像头 / 指纹 | 未验证 | 未做插卡通话与数据、定位、相机、指纹的验证，不在当前镜像的验证范围内 |
 
-## 系统行为说明
+## 与上游的差异（userpatches/）
 
-### 充电限制（charge-limit）
+对上游分两层：**armbian/build 框架**与**主线内核（linux 6.18.y）**。
+框架本体零改动；内核改动全部是 `userpatches/kernel/archive/sm8250-6.18/`
+下的补丁文件，与框架自带补丁走同一条流水线、按文件名字母序接在其后应用，
+每个补丁可单独摘除（retire）而不影响其余。
 
-- 实现：overlay 脚本 `/usr/local/bin/mp2650-charge-limit.py`（`charge-limit.sh` 是垫片），由 `charge-limit.timer` 每分钟触发。脚本经 I2C（bus 5、0x5c）直控充电芯片 MPS MP2650。每轮强制输入限流 2.0 A、充电电流 1.0 A。
-- 策略：按压降补偿静置压 vRest = V − I×R 判定。vRest ≥ 8.12 V 停充，≤ 7.85 V 复充。带载原始压 ≥ 8.68 V 立即停充。芯片自身 CV 8.72 V 是脚本失效时的保险。
-- 内阻 R：每台机器自标定。充电稳定时脚本短暂关 CHG_EN，等电量计读数稳定后取 ΔV/ΔI。样本存 `/var/lib/mp2650-charge-limit/r_samples`，用近 5 次的中位数。无样本时用 0.5 Ω。
-- 改法：改 .py 顶部常量，下一分钟生效。旧版写 `pm8150b-charger` 的 `charging_enabled`。PM8150B 只做 Type-C 检测，不送电。旧版已废弃。
+### 内核补丁
+
+| 补丁 | 内容 | 与主线的关系 |
+|---|---|---|
+| `nfc-mifare-tagcmd.patch` | NFC：NCI 核心支持 NXP 私有 TAG-CMD 接口（0x80），使 SN100T 能读 MIFARE Classic 卡；所有路径按控制器/卡类型门控，对其它设备零行为变化 | 主线无此接口 |
+| `qcom-pon-reset-reason.patch` | PMIC PON：开机时把上一次断电/复位原因打进内核日志（GEN2），用于无日志硬重启的定性 | 主线只存不报 |
+| `kebab-device-tree.patch` | 设备树全量使能：NFC 引脚拆分、QCA6390 PMU 节点（BT 使能 tlmm21 由 PMU 电源时序器驱动；WiFi 使能 tlmm20 保留 GPIO hog——使能被 hog 常按时控制器无法真正断电重设、任何二次 setup 都会卡死其 UART，run #7 实测）、面板（AMB655X）+ GPU、USB3/OTG/Type-C PD、PON 的 bootloader/recovery 模式位、马达；并删去框架基线给 pcie0_phy 挂的 `power-domains = <&qca639x>`——本构建里无人注册该电源域，PHY 探测会死等它、QCA6390 永不枚举（run #6 实测无 WiFi 的根因）。充电器节点由下面两个补丁接在其后叠加 | 板级使能，主线无 kebab 成品 DT |
+| `samsung-amb655x-panel.patch` | 面板驱动：主线与框架补丁集都没有 AMB655X（1080x2400 DSC）驱动，缺了它 MSM DRM 无法绑定、实体屏永不亮。此驱动为参考机 TEST 内核所带版本（sm8250-mainline 面板栈），已在本机面板实证；仅一处 API 适配（DSI 核心删掉的 write_long_multi 映射到 write_seq_multi，与现行主线三星 DSC 面板同法） | 主线缺此驱动 |
+| `mp2650-charger-driver.patch` | 充电驱动（push36）：新增 `drivers/power/supply/mp2650_charger.c`，驱动 MPS MP2650——power_supply（状态/在线/健康/充电开关 charge_behaviour/电流档位只读解码）+ OTG VBUS regulator（使能时先拉 PM8150 GPIO3 门控、再开芯片 OTG 位）。写法照主线 bq24190 同类驱动；只用既有 power_supply 属性枚举，不动头文件（不移 BTF 基准）。电流档位刻意不可写，写口只归限充脚本 | 主线无 MP2650 驱动（近亲 mp2629 是另一颗芯片）；OPLUS 厂商驱动绑其私有框架，不可移植 |
+| `kebab-mp2650-vbus-supply.patch` | 设备树：`&i2c5` 下加 `charger@5c`（compatible `mps,mp2650`、OTG 门控 GPIO、5 V regulator 子节点）；社区 DT 遗留的幻影节点 `charger@66`（ti,bq2597x，实物不存在、总线 NAK）置 disabled；`&pm8150b_typec` 及其 connector 接 `vbus-supply` 到该 regulator | 叠加在 kebab-device-tree 之后 |
+| `kebab-typec-9v-sink-pdo.patch` | 设备树（push35）：Type-C sink PDO 增加 9 V/2 A 一档 + op-sink 18 W，使第三方 PD 头能协商 9 V 给 MP2650（其输入耐压 4–21 V，厂商规格 27 W PD）。已实测：100 W PD 头协商 9 V、电池电流约 0.95 A | 叠加在 kebab-device-tree 之后 |
+| `qcom-pm8150b-charger-rerun-12s.patch` | PM8150B 充电块：开机 12 秒后重跑一次 APSD 检测。PM8150B 只负责 Type-C/BC1.2 识别，此补丁只影响识别时序，不碰充电通路 | 行为微调，可摘除 |
+
+### 内核配置
+
+| 路径 | 内容 |
+|---|---|
+| `userpatches/config/kernel/linux-sm8250-current.config` | Armbian 的用户配置覆盖位（优先级高于框架同名文件，此为框架设计机制）：RFKILL、POWER_RESET_QCOM_PON 改 =y，NFC 全套 =y 内置（功能随 boot 镜像走，不依赖 rootfs 模块），钉 CONFIG_DRM_PANEL_SAMSUNG_AMB655X=y 启用面板驱动，CONFIG_DEVFREQ_THERMAL=y 使 GPU devfreq 散热设备能注册（缺它每次开机报 cooling 注册失败，2026-11-07 定位），尾部追加 CONFIG_CHARGER_MP2650=y（自加功能一律 =y 内建，是本仓库既定惯例） |
+
+### 镜像定制与 overlay
+
+| 路径 | 内容 |
+|---|---|
+| `overlay/` | 直接铺进 rootfs 的文件：systemd 服务与脚本（清单见下节）、NTP 配置、桌面启动器（熄屏/亮屏/NFC 工具，走 /etc/skel） |
+| `customize-image.sh` | 构建收尾在 rootfs 内执行（先把 overlay 从构建框架挂载的 /tmp/overlay 复制进镜像——框架本身不代劳）：只装系统级包：bluez（蓝牙用户态）、gpiod、wpasupplicant、dhcpcd-base；polkitd 刻意不装（与原版镜像一致的包面裁定，2026-11-06；桌面日后装 polkit 代理包时 polkitd 会随其依赖自动回来）；桌面不进镜像——构建 chroot 装出的 Xfce 组成比参考机手动安装明显更重，2026-11-06 改为设备端脚本 /usr/local/bin/install-desktop.sh 在真机上 apt 安装（与手动安装同路，装后仍按需启动）；neard 在 Ubuntu resolute 源里没有，构建时从 Debian 池下载与参考机相同的 0.20-3 .deb 并校验哈希后本地安装，但禁用其自启（NFC 适配器默认无人占用，常驻监控由 nfctool watch 承担，2026-11-06 裁定）；另补装板级 hook 因 resolute 不在其支持名单而整批跳过的板级包（alsa-ucm-conf、qbootctl、qrtr-tools、mkbootimg、dropbear-bin，以及照板级 hook 做法临时启用 armbian 源装的 unudhcpd）并 enable qbootctl 与 usbgadget-rndis；enable 各服务，默认目标 multi-user，lightdm 若装了一律不自启（桌面按需 `systemctl start lightdm`，xrdp 不受影响）；overlay 的 /etc/skel 预置 Xfce 桌面图标默认（不显示磁盘/分区与可移动卷图标，本机约百个 GPT 分区否则全糊在桌面上）与终端配色（深色 terminalrc，避免 Ubuntu 原装 xfce4-terminal 的白底默认观感）；把镜像内 /boot/armbianEnv.txt（及 /usr/share/armbian/ 副本）的 abl_boot_partition_label 改写为 boot_a 使镜像按 A 槽打包（框架的 bootenv 文件从其自身 config/bootenv/ 直读、无 userpatches 覆盖路径，eed93414 曾放的 userpatches/config/bootenv/qcom-abl.txt 从未生效、run #7 仍打 _b 戳，已删除该文件；改写后校验该行，缺失即构建失败，杜绝静默打错戳）；复制后把 overlay 覆盖到的全部路径属主归正为 root（overlay 经构建链送达时带构建机 uid 1001，`cp -a` 会把 /etc、/usr 等既有目录染成该属主；timedated 的 unit 只有 CAP_SYS_TIME、无 CAP_DAC_OVERRIDE，root 身份也写不进 1001 属主的 /etc，真实时区变更会以 EACCES 失败——2026-11-10 定位并在机验证，归正后 timedatectl 恢复正常；无操作的目标时区不触发写入，曾长期掩盖此问题）；mask 掉 serial-getty@ttyS0（本板无此设备，通用镜像的该服务每次开机白等约 90 秒）；把 BSP 包里的 DSP 固件按设备树要求的名字复制到 /lib/firmware/postmarketos/（adsp/cdsp/venus，与参考机文件哈希一致）；按实测白名单修剪固件，只保留本机（SM8250 + QCA6390）能用到的约 105 MB，其余约 2.2 GB 在构建时删掉——白名单外另把 armbian-firmware-full 自带的 rtl_nic 全套（42 个文件，Realtek USB 网卡固件）整目录保留，并在剪除之后校验 rtl8153b-2/rtl8156a-2/rtl8156b-2 三个关键文件在位，缺失即构建失败（2026-11-16 两轮构建实测教训：校验只断言关键文件存在，不数总数） |
+| `tools/nfctool/` | NFC 读卡工具的 Rust 源码（只读，绝不写卡；含 watch 常驻监控模式：以 JSONL 记录刷卡行为，与读卡以 /tmp/nfctool-read.lock 协调让路）；由该源码以 `cargo build --release --target aarch64-unknown-linux-musl` 构建的二进制以 base64 形式存放在 `overlay/usr/local/bin/nfctool.b64`（仓库推送通道只收 UTF-8 文本，此方案为仓主 2026-11-16 拍板保留；customize 在构建时解码、校验 sha256 后落位 /usr/local/bin/nfctool，校验不过即构建失败），镜像自带、skel 有桌面启动器；卡库数据（~/.nfctool-cards.json）属个人数据，仍按刷后恢复清单处理 |
+
+## 自定义脚本清单（overlay/usr/local/bin 与服务）
+
+| 脚本 / 服务 | 作用 | 状态 |
+|---|---|---|
+| `mp2650-charge-limit.py`（`charge-limit.sh` 为垫片）+ `charge-limit.timer` | 限充：每分钟直控 MP2650（见下节） | 启用 |
+| `bt-provision.sh` + `bt-provision.service` | 开机给蓝牙控制器登记出厂地址（见蓝牙一节） | 启用 |
+| `wlan-factory-mac.sh` + `wlan-factory-mac.service` | 开机按 persist 出厂地址生成 WiFi 的 udev .link | 启用 |
+| `nfctool`（构建时由 .b64 解码落位）+ `nfctool-watch.service` | NFC 常驻监控（见 NFC 一节） | 启用 |
+| `panel-blank.service` + `screen-off` / `screen-on` | 空闲自动熄屏；两个命令手动熄/亮屏 | 启用 |
+| `volkey-brightness.py` + `volkey-brightness.service` | 音量键调屏幕亮度（见下节） | 启用 |
+| `install-desktop.sh` | 在真机上 apt 安装桌面（构建镜像恒为 minimal） | 手动运行 |
+| `setup-usbgadget-network.sh` / `remove-usbgadget-network.sh` | USB 设备模式（RNDIS）网络的装/卸辅助 | 随镜像 |
+| `wifi-join.sh`、`bt-fixed-mac.sh`、`nfc-watch.py`（+ 同名服务）、`qca6390-wlan-enable.service` | 旧 WiFi 加入、旧蓝牙改址、旧 python NFC watcher、旧 WLAN 使能——均已被现行机制取代 | 存档，不启用 |
+
+## 系统行为与使用说明
+
+### 充电限制（charge-limit）：策略与改法
+
+- 实现：`/usr/local/bin/mp2650-charge-limit.py`（`charge-limit.sh` 是垫片），由 `charge-limit.timer` 每分钟触发。脚本经 I2C（bus 5、0x5c）直控 MP2650，与内核驱动并存（驱动只读解码 + 管 OTG，寄存器写口归脚本，已实测互不干扰）。
+- 策略：每轮先把输入限流/充电电流钉回目标值（写前比较、不同才写）；再按压降补偿静置压 vRest = V − I×R 判定：vRest ≥ 8.12 V 停充，≤ 7.85 V 复充（驻停约 85%）；带载原始压 ≥ 8.68 V 立即停充。芯片自身 CV 8.72 V 是脚本失效时的保险——脚本死了电池也不会过充。
+- 内阻 R：每台机器自标定。充电稳定（电流 ≥ 350 mA）且样本过期（> 7 天或无样本）时，脚本短暂关 CHG_EN，等电量计读数稳定（其电流是约 20 秒长窗平均，须等两边都稳）后取 ΔV/ΔI，随后必恢复 CHG_EN。样本存 `/var/lib/mp2650-charge-limit/r_samples`，用近 5 次的中位数；无样本时用 0.5 Ω。
+- **改法**：改 .py 顶部常量，下一分钟自动生效，不用重启任何服务：
+  - 停/续/硬顶：`STOP_REST_UV = 8120000`、`RESUME_REST_UV = 7850000`、`RAW_CAP_UV = 8680000`（单位 µV）
+  - 电流：`TARGET_IINLIM = 0x28`（输入限流）、`TARGET_ICHG = 0x14`（充电电流），两寄存器都是 50 mA/步：0x28 = 2.0 A、0x14 = 1.0 A，按需换算
+  - 改完看下一轮日志确认：`journalctl -u charge-limit.service`（每轮一行，带 vRest 与当前 R）
+- 手动开关：`sudo mp2650-charge-limit.py --off` 立即停充、`--on` 恢复自动前先开充（下一分钟 timer 会按策略接管）。手动调寄存器做实验前先 `systemctl stop charge-limit.timer`，完后 `start`，否则脚本会把你的改动钉回去。
+- 旧版说明：旧脚本写 `pm8150b-charger` 的 `charging_enabled`——PM8150B 只做 Type-C 检测、不是充电通路，旧版从未真正掐断过充电，已废弃。
+
+### NFC 如何使用
+
+- 硬件：SN100T 控制器；内核 TAG-CMD 补丁使 MIFARE Classic 可读。工具 `nfctool` 全程只读——代码里没有任何写卡路径，这是硬约束，不要改。
+- 常驻监控：`nfctool-watch.service` 开机自启，`nfctool watch` 独占适配器，被刷的卡（寻卡/读出）以 JSONL 追加到 `~/nfc-log/events.jsonl`。看事件：`tail -f ~/nfc-log/events.jsonl`；查服务：`systemctl status nfctool-watch`。
+- 手动读卡：桌面有 NFC 工具启动器（gui）；命令行 `sudo nfctool dump`（文本输出）或 `sudo nfctool dump-json`。读卡期间经 `/tmp/nfctool-read.lock` 让 watch 自动让路，读完 watch 自行恢复，不用手动停服务。
+- 卡库：已知卡的登记数据在 `~/.nfctool-cards.json`（本机生成，不入镜像，刷机后按恢复清单还原）。
+- 注意：dump/watch 需要 root（设备上电是管理操作）；同一时刻只允许一个读卡方，锁文件就是协调点，卡住时先查锁是否残留。
+
+### 蓝牙如何使用
+
+- 开机即用：`bt-provision.service` 在开机约 11 秒内经 mgmt 给控制器登记地址，之后 bluetoothd 正常接管，不需要任何手动初始化。地址 = 本机出厂 WiFi 地址 − 1（persist 派生，每台机器自己的值；刷机不变，配对关系不丢）。
+- 查状态：`bluetoothctl show` 显示 `Powered: yes` 即就绪；`systemctl status bt-provision bluetooth` 看登记与服务。
+- 配对/连接（命令行）：`bluetoothctl` 进入后依次 `power on`、`scan on` 找到设备、`pair <地址>`、`trust <地址>`、`connect <地址>`。装了桌面后也可以用桌面蓝牙界面操作。
+- 边界：蓝牙音频（A2DP）未通——耳机能配对但不出声（镜像未带音频端点组件、本机音频通路亦未启用，见硬件表）；其它蓝牙外设按标准流程配对使用。
+- 排障：若 `bluetoothctl show` 无控制器或地址是占位值（00:00:00:00:5A:AD），先看 `journalctl -u bt-provision`——登记没完成蓝牙就不存在，不要去改 bluetoothd 配置。
 
 ### 音量键调亮度（volkey-brightness）
 
@@ -56,6 +111,7 @@
 - 键来源：音量+（键码 115）在 SoC 的 `gpio-keys` 输入设备上，音量−（键码 114）在 PMIC 的 `pm8941_resin` 上——两个键分属两个输入设备；脚本按设备名从 `/proc/bus/input/devices` 现查 event 节点，不写死编号（编号可随开机变化）。
 - 行为：每按一下 ± 最大亮度的 1/10（max_brightness 的 1/10 为一步），下限 20、不会被按键调到全黑；支持长按连发（autorepeat）；写背光节点 `/sys/class/backlight/ae94000.dsi.0/brightness`。
 - 改法：改 .py 里的步长（step）/下限（floor）后 `systemctl restart volkey-brightness.service` 才生效（常驻进程，不像 charge-limit 那样每分钟重读脚本）。
+
 
 ## 构建
 
