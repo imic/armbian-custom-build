@@ -1,5 +1,5 @@
 [Unit]
-Description=Battery charge hysteresis check (80/50)
+Description=Battery charge hysteresis check (voltage)
 After=multi-user.target
 
 [Service]
