@@ -69,6 +69,14 @@ apt-get update
 # pair or connect.
 apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
 
+# Cockpit web management (owner decision 2026-11-17): the same
+# package set the reference device runs, named explicitly with no
+# recommends so the image does not grow plugins the device does not
+# carry (networkmanager/machines). cockpit-bridge arrives as a
+# dependency. The OnePlus status plugin ships in the overlay under
+# /usr/share/cockpit/oneplus-status.
+apt-get install -y --no-install-recommends cockpit-ws cockpit-system cockpit-storaged cockpit-packagekit cockpit-files
+
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
 # device runs Debian's neard 0.20-3, hand-installed from this
@@ -103,6 +111,7 @@ fi
 # Files committed through the GitHub API lose their executable bit;
 # restore it for the programs the overlay ships.
 chmod +x /usr/local/bin/* 2>/dev/null || true
+chmod +x /usr/share/cockpit/oneplus-status/collect.sh 2>/dev/null || true
 
 # The device tree requests DSP firmware under postmarketos/ names,
 # while the blobs ship in the BSP package under qcom/ paths. The
@@ -142,6 +151,7 @@ cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/
 #   cycle), and the watcher's Gio dependency (python3-gi) left
 #   the package set with it. Files stay in the overlay, dormant;
 #   reviving them needs python3-gi reinstalled first.
+systemctl enable cockpit.socket
 systemctl enable charge-limit.timer
 systemctl enable nfctool-watch.service
 systemctl enable panel-blank.service

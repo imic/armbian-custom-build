@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>OnePlus 状态</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="../../static/branding.css" rel="stylesheet" />
+  <link rel="stylesheet" href="oneplus.css" />
+  <script type="text/javascript" src="../base1/cockpit.js"></script>
+  <script type="text/javascript" src="oneplus.js"></script>
+</head>
+<body>
+  <div class="op-wrap">
+    <div class="op-head">
+      <h1>OnePlus 8T 状态</h1>
+      <span id="op-updated" class="op-muted">加载中…</span>
+    </div>
+    <div id="op-error" class="op-error" hidden></div>
+    <div class="op-grid">
+
+      <section class="op-card">
+        <h2>网络 · WiFi</h2>
+        <dl>
+          <dt>SSID</dt><dd id="f-wifi_ssid">–</dd>
+          <dt>状态</dt><dd id="f-wifi_state">–</dd>
+          <dt>IP</dt><dd id="f-wifi_ip">–</dd>
+          <dt>频率</dt><dd id="f-wifi_freq">–</dd>
+          <dt>信号</dt><dd id="f-wifi_signal">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>蓝牙</h2>
+        <dl>
+          <dt>地址</dt><dd id="f-bt_addr">–</dd>
+          <dt>电源</dt><dd id="f-bt_powered">–</dd>
+          <dt>已连接</dt><dd id="f-bt_conn">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>NFC</h2>
+        <dl>
+          <dt>控制器</dt><dd id="f-nfc_present">–</dd>
+          <dt>监视服务</dt><dd id="f-nfc_watch">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>电池</h2>
+        <div class="op-big"><span id="f-batt_capacity">–</span><small>%</small></div>
+        <div class="op-bar"><div id="f-batt_bar"></div></div>
+        <dl>
+          <dt>状态</dt><dd id="f-batt_status">–</dd>
+          <dt>电压</dt><dd id="f-batt_voltage">–</dd>
+          <dt>电流</dt><dd id="f-batt_current">–</dd>
+          <dt>温度</dt><dd id="f-batt_temp">–</dd>
+          <dt>健康度</dt><dd id="f-batt_health">–</dd>
+          <dt>满充容量</dt><dd id="f-batt_full">–</dd>
+          <dt>循环次数</dt><dd id="f-batt_cycles">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>充电器</h2>
+        <dl>
+          <dt>接入</dt><dd id="f-chg_online">–</dd>
+          <dt>状态</dt><dd id="f-chg_status">–</dd>
+          <dt>VBUS</dt><dd id="f-chg_vbus">–</dd>
+          <dt>输入限流</dt><dd id="f-chg_iin">–</dd>
+          <dt>类型</dt><dd id="f-chg_usb_type">–</dd>
+          <dt>充电开关</dt><dd id="f-chg_enabled">–</dd>
+        </dl>
+        <p class="op-note">限充策略：静置电压 ≥8.12V 停充，≤7.85V 恢复（驻停约 85%）；负载电压 ≥8.68V 硬停；内阻自动标定</p>
+      </section>
+
+      <section class="op-card">
+        <h2>温度</h2>
+        <dl>
+          <dt>CPU 最高</dt><dd id="f-temp_cpu">–</dd>
+          <dt>GPU</dt><dd id="f-temp_gpu">–</dd>
+          <dt>PMIC 最高</dt><dd id="f-temp_pmic">–</dd>
+          <dt>SoC 环境</dt><dd id="f-temp_aoss">–</dd>
+          <dt>电池</dt><dd id="f-temp_batt">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>CPU · GPU</h2>
+        <dl>
+          <dt>负载 (1m)</dt><dd id="f-load1">–</dd>
+          <dt>小核簇</dt><dd id="f-cpu0_freq">–</dd>
+          <dt>大核簇</dt><dd id="f-cpu4_freq">–</dd>
+          <dt>超大核</dt><dd id="f-cpu7_freq">–</dd>
+          <dt>GPU 频率</dt><dd id="f-gpu_freq">–</dd>
+          <dt>GPU 降频档</dt><dd id="f-gpu_cool">–</dd>
+        </dl>
+      </section>
+
+      <section class="op-card">
+        <h2>内存 · 其他</h2>
+        <dl>
+          <dt>内存可用</dt><dd id="f-mem">–</dd>
+          <dt>Swap 已用</dt><dd id="f-swap">–</dd>
+          <dt>zram 压缩比</dt><dd id="f-zram">–</dd>
+          <dt>屏幕亮度</dt><dd id="f-bl">–</dd>
+          <dt>已运行</dt><dd id="f-uptime">–</dd>
+        </dl>
+      </section>
+
+    </div>
+  </div>
+</body>
+</html>
