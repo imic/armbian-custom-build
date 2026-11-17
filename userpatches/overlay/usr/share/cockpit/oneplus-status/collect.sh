@@ -144,3 +144,11 @@ if [ -n "$B" ]; then
 fi
 
 echo "uptime_s=$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null)"
+
+# ---- Storage: the rootfs lives on the GPT "linux" partition ----
+echo "stor_dev=$(readlink -f /dev/disk/by-partlabel/linux 2>/dev/null || echo -)"
+set -- $(df -B1 --output=size,used,avail,pcent / 2>/dev/null | tail -1)
+echo "stor_size=${1:-}"
+echo "stor_used=${2:-}"
+echo "stor_avail=${3:-}"
+echo "stor_pcent=${4%\%}"

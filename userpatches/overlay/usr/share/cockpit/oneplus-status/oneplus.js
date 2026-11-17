@@ -22,6 +22,7 @@ function fmtCurrUa(v) { const n = num(v); return n === null ? null : (n >= 0 ? "
 function fmtKhz(v) { const n = num(v); return n === null ? null : Math.round(n / 1000) + " MHz"; }
 function fmtHz(v) { const n = num(v); return n === null ? null : Math.round(n / 1000000) + " MHz"; }
 function fmtGb(kb) { const n = num(kb); return n === null ? null : (n / 1048576).toFixed(1) + " GB"; }
+function fmtBytesB(v) { const n = num(v); return n === null ? null : (n / 1073741824).toFixed(1) + " GB"; }
 
 function render(d) {
     setText("f-wifi_ssid", d.wifi_ssid);
@@ -80,6 +81,12 @@ function render(d) {
     setText("f-swap", st === null || sf === null ? null : fmtGb(st - sf) + " / " + fmtGb(st));
     const zo = num(d.zram_orig), zc = num(d.zram_compr);
     setText("f-zram", zo === null || zc === null || zo < 4096 ? "未使用" : (zo / Math.max(1, zc)).toFixed(1) + "×");
+    setText("f-stor_dev", d.stor_dev && d.stor_dev !== "-" ? d.stor_dev + " · 挂载 /" : null);
+    const ss = num(d.stor_size), su = num(d.stor_used), sa = num(d.stor_avail), sp = num(d.stor_pcent);
+    setText("f-stor_used", ss === null || su === null ? null : fmtBytesB(su) + " / " + fmtBytesB(ss) + (sp === null ? "" : "（" + sp + "%）"));
+    setText("f-stor_avail", sa === null ? null : fmtBytesB(sa));
+    const sbar = document.getElementById("f-stor_bar");
+    if (sbar && sp !== null) sbar.style.width = Math.max(0, Math.min(100, sp)) + "%";
     const bc2 = num(d.bl_cur), bm = num(d.bl_max);
     setText("f-bl", bc2 === null || bm === null || bm === 0 ? null : Math.round(bc2 * 100 / bm) + "%");
     const up = num(d.uptime_s);
