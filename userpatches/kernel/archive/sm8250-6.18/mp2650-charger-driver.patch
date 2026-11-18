@@ -1,0 +1,431 @@
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index 38457f6..e96a583 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -698,6 +698,19 @@ config CHARGER_MT6370
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called "mt6370-charger".
+ 
++config CHARGER_MP2650
++	tristate "MPS MP2650 charger"
++	depends on I2C
++	depends on GPIOLIB
++	help
++	  Say Y or M here to enable support for the Monolithic Power
++	  Systems MP2650 NVDC charger. The driver reports charge state
++	  through a power_supply and exposes the OTG boost as a VBUS
++	  regulator for the Type-C port manager.
++
++	  This driver can also be built as a module. If so, the module
++	  will be called "mp2650_charger".
++
+ config CHARGER_QCOM_SMBB
+ 	tristate "Qualcomm Switch-Mode Battery Charger and Boost"
+ 	depends on MFD_SPMI_PMIC || COMPILE_TEST
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index 3522b77..b947a90 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -91,6 +91,7 @@ obj-$(CONFIG_CHARGER_MAX8998)	+= max8998_charger.o
+ obj-$(CONFIG_CHARGER_MP2629)	+= mp2629_charger.o
+ obj-$(CONFIG_CHARGER_MT6360)	+= mt6360_charger.o
+ obj-$(CONFIG_CHARGER_MT6370)	+= mt6370-charger.o
++obj-$(CONFIG_CHARGER_MP2650)	+= mp2650_charger.o
+ obj-$(CONFIG_CHARGER_QCOM_SMBB)	+= qcom_smbb.o
+ obj-$(CONFIG_BATTERY_PM8916_BMS_VM)	+= pm8916_bms_vm.o
+ obj-$(CONFIG_CHARGER_PM8916_LBC)	+= pm8916_lbc.o
+diff --git a/drivers/power/supply/mp2650_charger.c b/drivers/power/supply/mp2650_charger.c
+new file mode 100644
+index 0000000..7475b81
+--- /dev/null
++++ b/drivers/power/supply/mp2650_charger.c
+@@ -0,0 +1,389 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * MPS MP2650 NVDC charger driver.
++ *
++ * The MP2650 is the wired charger on the OnePlus 8T. It also sources
++ * OTG VBUS. The PM8150B boost cannot source VBUS from the two-cell
++ * pack, so the Type-C port manager needs this chip as its VBUS
++ * supply.
++ *
++ * The power_supply reports charge state and the charge enable
++ * switch. The regulator models the OTG boost. Current limits stay
++ * read-only here; a userspace limiter owns the charge profile.
++ */
++
++#include <linux/gpio/consumer.h>
++#include <linux/i2c.h>
++#include <linux/module.h>
++#include <linux/power_supply.h>
++#include <linux/regulator/driver.h>
++#include <linux/regulator/of_regulator.h>
++
++#define MP2650_REG_IINLIM	0x00
++#define MP2650_REG_ICHG		0x02
++#define MP2650_REG_OTG_ILIM	0x07
++#define MP2650_REG_CTRL		0x08
++#define MP2650_REG_WATCHDOG	0x09
++#define MP2650_REG_FAULT	0x0b
++#define MP2650_REG_STATE	0x13
++
++#define MP2650_CHG_EN		BIT(4)
++#define MP2650_OTG_EN		BIT(5)
++
++#define MP2650_WATCHDOG_MASK	GENMASK(5, 4)
++#define MP2650_WATCHDOG_OFF	0x00
++
++#define MP2650_CURR_STEP_UA	50000
++#define MP2650_CURR_MASK	GENMASK(5, 0)
++
++/* REG07[3:0] is the OTG current limit in 250 mA steps. */
++#define MP2650_OTG_ILIM_MASK	GENMASK(3, 0)
++#define MP2650_OTG_ILIM_STEP_UA	250000
++#define MP2650_OTG_ILIM_DEF_UA	1500000
++
++/*
++ * VBUS ramp on this board measures 550 ms to 1.1 s into a light
++ * load. A hub with downstream devices settles slower, and the
++ * Type-C port driver polls the PMIC vSafe5V bit for only 250 ms
++ * after regulator_enable returns. Report 3 s so the rail is up
++ * and settled before that poll starts.
++ */
++#define MP2650_OTG_ENABLE_TIME_US	3000000
++
++/* REG13 low nibble: charge state. */
++#define MP2650_STATE_NONE	0x00
++#define MP2650_STATE_IDLE	0x03
++#define MP2650_STATE_CHARGING	0x0b
++#define MP2650_STATE_DONE	0x0f
++
++struct mp2650 {
++	struct i2c_client *client;
++	struct gpio_desc *otg_gate_gpio;
++	struct power_supply *psy;
++	struct regulator_dev *rdev;
++	unsigned int otg_ilim_ua;
++};
++
++static int mp2650_read(struct mp2650 *chg, u8 reg)
++{
++	int ret = i2c_smbus_read_byte_data(chg->client, reg);
++
++	if (ret < 0)
++		dev_err(&chg->client->dev, "reg 0x%02x read failed: %d\n",
++			reg, ret);
++	return ret;
++}
++
++static int mp2650_update(struct mp2650 *chg, u8 reg, u8 mask, u8 val)
++{
++	int old = mp2650_read(chg, reg);
++	int ret;
++
++	if (old < 0)
++		return old;
++
++	ret = i2c_smbus_write_byte_data(chg->client, reg,
++					(u8)((old & ~mask) | (val & mask)));
++	if (ret < 0)
++		dev_err(&chg->client->dev, "reg 0x%02x write failed: %d\n",
++			reg, ret);
++	return ret;
++}
++
++/* OTG VBUS regulator */
++
++static int mp2650_otg_enable(struct regulator_dev *rdev)
++{
++	struct mp2650 *chg = rdev_get_drvdata(rdev);
++	int ret;
++
++	gpiod_set_value_cansleep(chg->otg_gate_gpio, 1);
++
++	ret = mp2650_update(chg, MP2650_REG_OTG_ILIM, MP2650_OTG_ILIM_MASK,
++			    chg->otg_ilim_ua / MP2650_OTG_ILIM_STEP_UA);
++	if (ret < 0)
++		goto err_gpio;
++
++	ret = mp2650_update(chg, MP2650_REG_CTRL,
++			    MP2650_OTG_EN, MP2650_OTG_EN);
++	if (ret < 0)
++		goto err_gpio;
++
++	/*
++	 * The charger watchdog resets the OTG enable bit if nothing
++	 * kicks it. Nothing here does, so turn the watchdog off.
++	 */
++	ret = mp2650_update(chg, MP2650_REG_WATCHDOG, MP2650_WATCHDOG_MASK,
++			    MP2650_WATCHDOG_OFF);
++	if (ret < 0) {
++		mp2650_update(chg, MP2650_REG_CTRL, MP2650_OTG_EN, 0);
++		goto err_gpio;
++	}
++
++	return 0;
++
++err_gpio:
++	gpiod_set_value_cansleep(chg->otg_gate_gpio, 0);
++	return ret;
++}
++
++static int mp2650_otg_disable(struct regulator_dev *rdev)
++{
++	struct mp2650 *chg = rdev_get_drvdata(rdev);
++
++	gpiod_set_value_cansleep(chg->otg_gate_gpio, 0);
++
++	return mp2650_update(chg, MP2650_REG_CTRL, MP2650_OTG_EN, 0);
++}
++
++static int mp2650_otg_is_enabled(struct regulator_dev *rdev)
++{
++	struct mp2650 *chg = rdev_get_drvdata(rdev);
++	int val = mp2650_read(chg, MP2650_REG_CTRL);
++
++	if (val < 0)
++		return val;
++	return !!(val & MP2650_OTG_EN);
++}
++
++/*
++ * The limit is cached, not written. The core applies machine
++ * constraints while the boost is off. REG07 takes effect once
++ * REG08[5] is set, so .enable programs the cached value.
++ */
++static int mp2650_otg_set_current_limit(struct regulator_dev *rdev,
++					int min_uA, int max_uA)
++{
++	struct mp2650 *chg = rdev_get_drvdata(rdev);
++	unsigned int sel = max_uA / MP2650_OTG_ILIM_STEP_UA;
++
++	if (sel > MP2650_OTG_ILIM_MASK)
++		sel = MP2650_OTG_ILIM_MASK;
++
++	if ((int)(sel * MP2650_OTG_ILIM_STEP_UA) < min_uA)
++		return -EINVAL;
++
++	chg->otg_ilim_ua = sel * MP2650_OTG_ILIM_STEP_UA;
++
++	if (chg->rdev && mp2650_otg_is_enabled(rdev) > 0)
++		return mp2650_update(chg, MP2650_REG_OTG_ILIM,
++				     MP2650_OTG_ILIM_MASK, sel);
++
++	return 0;
++}
++
++static int mp2650_otg_get_current_limit(struct regulator_dev *rdev)
++{
++	struct mp2650 *chg = rdev_get_drvdata(rdev);
++
++	return chg->otg_ilim_ua;
++}
++
++static const struct regulator_ops mp2650_otg_ops = {
++	.enable = mp2650_otg_enable,
++	.disable = mp2650_otg_disable,
++	.is_enabled = mp2650_otg_is_enabled,
++	.set_current_limit = mp2650_otg_set_current_limit,
++	.get_current_limit = mp2650_otg_get_current_limit,
++};
++
++static const struct regulator_desc mp2650_otg_desc = {
++	.name = "mp2650-otg-vbus",
++	.of_match = "otg-vbus",
++	.ops = &mp2650_otg_ops,
++	.type = REGULATOR_VOLTAGE,
++	.owner = THIS_MODULE,
++	.fixed_uV = 5000000,
++	.n_voltages = 1,
++	.enable_time = MP2650_OTG_ENABLE_TIME_US,
++};
++
++/* power_supply */
++
++static enum power_supply_property mp2650_psy_props[] = {
++	POWER_SUPPLY_PROP_STATUS,
++	POWER_SUPPLY_PROP_ONLINE,
++	POWER_SUPPLY_PROP_HEALTH,
++	POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR,
++	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT,
++	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
++};
++
++static int mp2650_psy_get_property(struct power_supply *psy,
++				   enum power_supply_property psp,
++				   union power_supply_propval *val)
++{
++	struct mp2650 *chg = power_supply_get_drvdata(psy);
++	int ret;
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_STATUS:
++		ret = mp2650_read(chg, MP2650_REG_STATE);
++		if (ret < 0)
++			return ret;
++		switch (ret & 0x0f) {
++		case MP2650_STATE_CHARGING:
++			val->intval = POWER_SUPPLY_STATUS_CHARGING;
++			break;
++		case MP2650_STATE_DONE:
++			val->intval = POWER_SUPPLY_STATUS_FULL;
++			break;
++		case MP2650_STATE_IDLE:
++			val->intval = POWER_SUPPLY_STATUS_NOT_CHARGING;
++			break;
++		case MP2650_STATE_NONE:
++			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
++			break;
++		default:
++			val->intval = POWER_SUPPLY_STATUS_UNKNOWN;
++			break;
++		}
++		break;
++	case POWER_SUPPLY_PROP_ONLINE:
++		ret = mp2650_read(chg, MP2650_REG_STATE);
++		if (ret < 0)
++			return ret;
++		val->intval = (ret & 0x0f) != MP2650_STATE_NONE;
++		break;
++	case POWER_SUPPLY_PROP_HEALTH:
++		ret = mp2650_read(chg, MP2650_REG_FAULT);
++		if (ret < 0)
++			return ret;
++		val->intval = ret ? POWER_SUPPLY_HEALTH_UNSPEC_FAILURE
++				  : POWER_SUPPLY_HEALTH_GOOD;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		ret = mp2650_read(chg, MP2650_REG_CTRL);
++		if (ret < 0)
++			return ret;
++		val->intval = (ret & MP2650_CHG_EN)
++			? POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO
++			: POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE;
++		break;
++	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT:
++		ret = mp2650_read(chg, MP2650_REG_ICHG);
++		if (ret < 0)
++			return ret;
++		val->intval = (ret & MP2650_CURR_MASK) * MP2650_CURR_STEP_UA;
++		break;
++	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
++		ret = mp2650_read(chg, MP2650_REG_IINLIM);
++		if (ret < 0)
++			return ret;
++		val->intval = (ret & MP2650_CURR_MASK) * MP2650_CURR_STEP_UA;
++		break;
++	default:
++		return -EINVAL;
++	}
++
++	return 0;
++}
++
++static int mp2650_psy_set_property(struct power_supply *psy,
++				   enum power_supply_property psp,
++				   const union power_supply_propval *val)
++{
++	struct mp2650 *chg = power_supply_get_drvdata(psy);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR:
++		switch (val->intval) {
++		case POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO:
++			return mp2650_update(chg, MP2650_REG_CTRL,
++					     MP2650_CHG_EN, MP2650_CHG_EN);
++		case POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE:
++			return mp2650_update(chg, MP2650_REG_CTRL,
++					     MP2650_CHG_EN, 0);
++		default:
++			return -EINVAL;
++		}
++	default:
++		return -EINVAL;
++	}
++}
++
++static int mp2650_psy_property_is_writeable(struct power_supply *psy,
++					    enum power_supply_property psp)
++{
++	return psp == POWER_SUPPLY_PROP_CHARGE_BEHAVIOUR;
++}
++
++static const struct power_supply_desc mp2650_psy_desc = {
++	.name = "mp2650-charger",
++	.type = POWER_SUPPLY_TYPE_USB,
++	.charge_behaviours = BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_AUTO) |
++			     BIT(POWER_SUPPLY_CHARGE_BEHAVIOUR_INHIBIT_CHARGE),
++	.properties = mp2650_psy_props,
++	.num_properties = ARRAY_SIZE(mp2650_psy_props),
++	.get_property = mp2650_psy_get_property,
++	.set_property = mp2650_psy_set_property,
++	.property_is_writeable = mp2650_psy_property_is_writeable,
++};
++
++static int mp2650_probe(struct i2c_client *client)
++{
++	struct device *dev = &client->dev;
++	struct power_supply_config psy_cfg = { };
++	struct regulator_config reg_cfg = { };
++	struct mp2650 *chg;
++	int ret;
++
++	chg = devm_kzalloc(dev, sizeof(*chg), GFP_KERNEL);
++	if (!chg)
++		return -ENOMEM;
++
++	chg->client = client;
++	chg->otg_ilim_ua = MP2650_OTG_ILIM_DEF_UA;
++	i2c_set_clientdata(client, chg);
++
++	ret = mp2650_read(chg, MP2650_REG_FAULT);
++	if (ret < 0)
++		return dev_err_probe(dev, ret, "charger not responding\n");
++
++	chg->otg_gate_gpio = devm_gpiod_get(dev, "otg-gate", GPIOD_OUT_LOW);
++	if (IS_ERR(chg->otg_gate_gpio))
++		return dev_err_probe(dev, PTR_ERR(chg->otg_gate_gpio),
++				     "failed to get otg-gate gpio\n");
++
++	psy_cfg.drv_data = chg;
++	psy_cfg.fwnode = dev_fwnode(dev);
++	chg->psy = devm_power_supply_register(dev, &mp2650_psy_desc, &psy_cfg);
++	if (IS_ERR(chg->psy))
++		return dev_err_probe(dev, PTR_ERR(chg->psy),
++				     "failed to register power supply\n");
++
++	reg_cfg.dev = dev;
++	reg_cfg.driver_data = chg;
++	reg_cfg.of_node = dev->of_node;
++	chg->rdev = devm_regulator_register(dev, &mp2650_otg_desc, &reg_cfg);
++	if (IS_ERR(chg->rdev))
++		return dev_err_probe(dev, PTR_ERR(chg->rdev),
++				     "failed to register otg-vbus regulator\n");
++
++	return 0;
++}
++
++static const struct of_device_id mp2650_of_match[] = {
++	{ .compatible = "mps,mp2650" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mp2650_of_match);
++
++static const struct i2c_device_id mp2650_i2c_id[] = {
++	{ "mp2650" },
++	{ }
++};
++MODULE_DEVICE_TABLE(i2c, mp2650_i2c_id);
++
++static struct i2c_driver mp2650_driver = {
++	.driver = {
++		.name = "mp2650-charger",
++		.of_match_table = mp2650_of_match,
++	},
++	.probe = mp2650_probe,
++	.id_table = mp2650_i2c_id,
++};
++module_i2c_driver(mp2650_driver);
++
++MODULE_DESCRIPTION("MPS MP2650 charger and OTG VBUS driver");
++MODULE_LICENSE("GPL");

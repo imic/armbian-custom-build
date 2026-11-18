@@ -44,6 +44,7 @@ if [ -f /usr/local/bin/nfctool.b64 ]; then
 	echo "42e7827a5b1a370419242a7cc0512bf71d97a71e2034f28901721966a66b45a0  /usr/local/bin/nfctool" | sha256sum -c - > /dev/null || { echo "customize: nfctool sha256 mismatch after decode" >&2; exit 1; }
 fi
 
+
 apt-get update
 # System packages only - the image is always minimal now. The Xfce
 # desktop is NOT baked in (user ruling 2026-11-06): even with
@@ -67,6 +68,14 @@ apt-get update
 # kernel brings hci0 up (QCA6390 setup completes) but nothing can
 # pair or connect.
 apt-get install -y bluez gpiod wpasupplicant dhcpcd-base
+
+# Cockpit web management (owner decision 2026-11-17): the same
+# package set the reference device runs, named explicitly with no
+# recommends so the image does not grow plugins the device does not
+# carry (networkmanager/machines). cockpit-bridge arrives as a
+# dependency. The OnePlus status plugin ships in the overlay under
+# /usr/share/cockpit/oneplus-status.
+apt-get install -y --no-install-recommends cockpit-ws cockpit-system cockpit-storaged cockpit-packagekit cockpit-files
 
 # neard has no installation candidate in the Ubuntu resolute
 # archive (it was also dropped from Debian trixie). The reference
@@ -102,6 +111,7 @@ fi
 # Files committed through the GitHub API lose their executable bit;
 # restore it for the programs the overlay ships.
 chmod +x /usr/local/bin/* 2>/dev/null || true
+chmod +x /usr/share/cockpit/oneplus-status/collect.sh 2>/dev/null || true
 
 # The device tree requests DSP firmware under postmarketos/ names,
 # while the blobs ship in the BSP package under qcom/ paths. The
@@ -141,6 +151,7 @@ cp /lib/firmware/qcom/sm8250/OnePlus/kebab/venus.mbn /lib/firmware/postmarketos/
 #   cycle), and the watcher's Gio dependency (python3-gi) left
 #   the package set with it. Files stay in the overlay, dormant;
 #   reviving them needs python3-gi reinstalled first.
+systemctl enable cockpit.socket
 systemctl enable charge-limit.timer
 systemctl enable nfctool-watch.service
 systemctl enable panel-blank.service
@@ -249,6 +260,24 @@ find $FW/qcom -mindepth 1 -maxdepth 1 -type d ! -name sm8250 -exec rm -rf {} +
 find $FW/qcom/sm8250 -mindepth 1 -maxdepth 1 -type d ! -name OnePlus -exec rm -rf {} +
 find $FW/ath11k -mindepth 1 -maxdepth 1 -type d ! -name QCA6390 -exec rm -rf {} +
 find $FW -mindepth 1 -maxdepth 1 -type d \
-	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos \
+	! -name qcom ! -name ath11k ! -name qca ! -name postmarketos ! -name rtl_nic \
 	-exec rm -rf {} +
 echo "customize: firmware after pruning: $(du -sh $FW | cut -f1)"
+
+# rtl_nic firmware (USB NICs: RTL8153, RTL8156) travels base64-encoded
+# as a tarball at /usr/local/share/rtl-nic-fw.tar.gz.b64. The push
+# channel only carries UTF-8 text. Hash-verified - a mismatch fails
+# the build rather than shipping corrupt firmware. This must run
+# AFTER the firmware pruning above: pruning deletes every top-level
+# /lib/firmware directory not on its keep list (rtl_nic is on the
+# list too, as a second line of defence).
+if [ -f /usr/local/share/rtl-nic-fw.tar.gz.b64 ]; then
+	base64 -d /usr/local/share/rtl-nic-fw.tar.gz.b64 > /tmp/rtl-nic-fw.tar.gz
+	rm -f /usr/local/share/rtl-nic-fw.tar.gz.b64
+	echo "89464818186d4f8b01439555f99cbc4b985d749b2d30b09ae07b9b8de56f3de6  /tmp/rtl-nic-fw.tar.gz" | sha256sum -c - > /dev/null || { echo "customize: rtl-nic fw sha256 mismatch after decode" >&2; exit 1; }
+	tar -xzf /tmp/rtl-nic-fw.tar.gz -C /
+	rm -f /tmp/rtl-nic-fw.tar.gz
+	for f in rtl8153b-2.fw rtl8156a-2.fw rtl8156b-2.fw; do
+		[ -f "/lib/firmware/rtl_nic/$f" ] || { echo "customize: rtl_nic firmware $f missing after extract" >&2; exit 1; }
+	done
+fi

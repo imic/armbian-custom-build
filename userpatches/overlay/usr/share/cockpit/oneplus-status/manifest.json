@@ -1,0 +1,1 @@
+{"name":"oneplus-status","priority":60,"requires":{"cockpit":"318"},"tools":{"index":{"keywords":[{"matches":["oneplus","battery","nfc","bluetooth","thermal"]}],"label":"OnePlus 状态"}},"version":0}

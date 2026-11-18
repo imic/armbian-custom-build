@@ -1,0 +1,46 @@
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
+@@ -604,12 +604,26 @@
+ 
+     charger@66 {
+         compatible = "ti,bq25980";
+-        status = "ok";
++        status = "disabled";
+         reg = <0x66>;
+         interrupt-parent = <&tlmm>;
+         interrupts = <0x0f 0x00>;
+         monitored-battery = <&battery>;
+     };
++
++    mp2650: charger@5c {
++        compatible = "mps,mp2650";
++        reg = <0x5c>;
++        otg-gate-gpios = <&pm8150_gpios 3 GPIO_ACTIVE_HIGH>;
++
++        mp2650_otg: otg-vbus {
++            regulator-name = "mp2650-otg-vbus";
++            regulator-min-microvolt = <5000000>;
++            regulator-max-microvolt = <5000000>;
++            regulator-min-microamp = <500000>;
++            regulator-max-microamp = <1500000>;
++        };
++    };
+ };
+ 
+ &i2c16 {
+@@ -959,6 +973,7 @@
+ 
+ &pm8150b_typec {
+ 	vdd-pdphy-supply = <&vreg_l2a_3p1>;
++	vdd-vbus-supply = <&mp2650_otg>;
+ 	status = "okay";
+ 
+ 	connector {
+@@ -970,6 +985,7 @@
+ 		/* PDO_FIXED 5V 3A, dual-role power + data swap capable */
+ 		source-pdos = <0x2601912c>;
+ 		sink-pdos = <0x2601912c>;
++		vbus-supply = <&mp2650_otg>;
+ 
+ 		ports {
+ 			#address-cells = <1>;
