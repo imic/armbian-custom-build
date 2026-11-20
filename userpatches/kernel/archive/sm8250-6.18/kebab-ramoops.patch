@@ -1,0 +1,24 @@
+arm64: dts: qcom: kebab: add ramoops reserved memory
+
+The kernel builds pstore with RAM, console and pmsg backends.
+The device tree has no ramoops node. pstore stays empty.
+Add a 2 MiB ramoops region at 0x9a000000.
+The address sits in the free gap 0x98700000-0x9c000000.
+
+--- a/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
++++ b/arch/arm64/boot/dts/qcom/sm8250-oneplus-kebab.dts
+@@ -85,6 +85,14 @@
+ 		// 	no-map;
+ 		// };
+ 
++		ramoops: memory@9a000000 {
++			compatible = "ramoops";
++			reg = <0x0 0x9a000000 0x0 0x200000>;
++			record-size = <0x8000>;
++			console-size = <0x100000>;
++			pmsg-size = <0x80000>;
++		};
++
+ 		camera_mem: memory@8dc00000 {
+ 			reg = <0x0 0x8dc00000 0x0 0x500000>;
+ 			no-map;

@@ -1,0 +1,51 @@
+power: reset: qcom-pon: dump all PON registers at probe
+
+The reason registers name no fault for a PS_HOLD reset.
+Dump offsets 0x00-0x0f of the PON block at probe.
+A byte that differs after an unexpected reset is a latched fault.
+The dump never fails the probe.
+
+--- a/drivers/power/reset/qcom-pon.c
++++ b/drivers/power/reset/qcom-pon.c
+@@ -85,6 +85,33 @@
+ 			" (PS_HOLD: software reset)" : "");
+ }
+ 
++/*
++ * Dump the full low PON register block. The reason registers do not
++ * decode a PS_HOLD reset. A register that changes after an unexpected
++ * reset marks the latched fault source. Read failures are silent.
++ */
++static void qcom_pon_log_reg_dump(struct qcom_pon *pon)
++{
++	unsigned int regs[16];
++	int i, error;
++
++	if (pon->reason_shift != GEN2_REASON_SHIFT)
++		return;
++
++	for (i = 0; i < 16; i++) {
++		error = regmap_read(pon->regmap, pon->baseaddr + i,
++				    &regs[i]);
++		if (error)
++			return;
++	}
++
++	dev_info(pon->dev,
++		 "pon regs 0x00-0x0f: %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x %02x\n",
++		 regs[0], regs[1], regs[2], regs[3], regs[4], regs[5],
++		 regs[6], regs[7], regs[8], regs[9], regs[10], regs[11],
++		 regs[12], regs[13], regs[14], regs[15]);
++}
++
+ static int qcom_pon_probe(struct platform_device *pdev)
+ {
+ 	struct qcom_pon *pon;
+@@ -122,6 +149,7 @@
+ 	}
+ 
+ 	qcom_pon_log_reset_reason(pon);
++	qcom_pon_log_reg_dump(pon);
+ 
+ 	platform_set_drvdata(pdev, pon);
+ 
